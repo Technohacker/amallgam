@@ -1,9 +1,0 @@
-[package]
-name = "amallgam"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-activitypub_federation = "0.6"
-axum = "0.8"
-tokio = { version = "1.43", features = ["full"] }
