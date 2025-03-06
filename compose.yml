@@ -1,3 +1,52 @@
 services:
-  amallgam_1:
+  # AmaLLgaM and friends
+  amallgam:
     build: amallgam_server
+
+  # Mastodon and friends
+  mastodon:
+    image: lscr.io/linuxserver/mastodon:latest
+    env_file:
+      - "./vendor/mastodon/.env"
+    environment:
+      PUID: 1000
+      PGID: 1000
+      LOCAL_DOMAIN: mastodon.docker
+      REDIS_HOST: mastodon_redis
+      REDIS_PORT: 6379
+      DB_HOST: mastodon_postgres
+      DB_PORT: 5432
+      DB_USER: mastodon
+      DB_NAME: mastodon
+      DB_PASS: mastodon
+      ES_ENABLED: false
+      SMTP_SERVER: smtp4dev
+      SMTP_PORT: 25
+      SMTP_LOGIN: mastodon
+      SMTP_PASSWORD: mastodon
+      SMTP_FROM_ADDRESS: notifications@smtp4dev
+      S3_ENABLED: false
+    volumes:
+      - "./volumes/mastodon/config:/config:Z"
+
+  mastodon_redis:
+    image: redis:alpine
+    volumes:
+      - "./volumes/mastodon/redis/data:/data:Z"
+
+  mastodon_postgres:
+    image: postgres:alpine
+    environment:
+      POSTGRES_USER: mastodon
+      POSTGRES_DB: mastodon
+      POSTGRES_PASSWORD: mastodon
+    volumes:
+      - "./volumes/mastodon/postgres/data:/var/lib/postgresql/data:Z"
+
+  # Dummy SMTP server
+  smtp4dev:
+    image: rnwood/smtp4dev:v3
+    volumes:
+      - "./volumes/smtp4dev/data:/smtp4dev:Z"
+    environment:
+      - ServerOptions__Urls=http://*:80
