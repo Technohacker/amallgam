@@ -2,6 +2,10 @@ services:
   # AmaLLgaM and friends
   amallgam:
     build: amallgam_server
+    develop:
+      watch:
+        - action: rebuild
+          path: ./amallgam_server
 
   # Mastodon and friends
   mastodon:
