@@ -7,8 +7,14 @@ edition = "2024"
 activitypub_federation = { version = "0.6", features = ["axum"] }
 anyhow = "1.0"
 async-trait = "0.1"
-axum = "0.7"
+axum = { version = "0.7", features = ["macros"] }
 hostname = "0.4"
 log = "0.4"
+multi_index_map = "0.11"
 pretty_env_logger = "0.5"
+serde = "1.0"
+serde_json = "1.0"
 tokio = { version = "1.43", features = ["full"] }
+url = "2.5"
+sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "sqlite" ] }
+uuid = { version = "1.15", features = ["v4", "v7", "serde"] }

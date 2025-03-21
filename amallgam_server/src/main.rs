@@ -6,12 +6,13 @@ async fn main() -> Result<()> {
     pretty_env_logger::init_timed();
 
     let config = amallgam::Config {
+        db_url: "sqlite::memory:".to_string(),
         domain_name: hostname::get()
             .expect("Missing hostname?")
             .into_string()
             .expect("Bad UTF8 hostname?"),
     };
-    let port = 3000;
+    let port = 80;
     log::info!("AmaLLgaM getting ready on host {}", &config.domain_name);
 
     // Prepare the router
