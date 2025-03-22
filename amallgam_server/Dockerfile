@@ -13,6 +13,7 @@ COPY . .
 RUN cargo build
 
 FROM alpine
+WORKDIR /amallgam
 COPY --from=builder /usr/src/amallgam/target/debug/amallgam /usr/local/bin/amallgam
 
 ENV RUST_LOG info

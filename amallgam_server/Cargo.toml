@@ -8,10 +8,12 @@ activitypub_federation = { version = "0.6", features = ["axum"] }
 anyhow = "1.0"
 async-trait = "0.1"
 axum = { version = "0.7", features = ["macros"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 hostname = "0.4"
 log = "0.4"
 multi_index_map = "0.11"
 pretty_env_logger = "0.5"
+rustls = "0.23"
 serde = "1.0"
 serde_json = "1.0"
 tokio = { version = "1.43", features = ["full"] }

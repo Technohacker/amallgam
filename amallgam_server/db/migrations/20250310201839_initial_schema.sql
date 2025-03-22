@@ -48,10 +48,10 @@ INSERT INTO users (
     outbox,
     public_key
 ) VALUES (  
-    "http://amallgam.docker/user/abc",
+    "https://amallgam.docker/user/abc",
     "abc",
     "Abc",
-    "http://amallgam.docker/user/abc/inbox",
-    "http://amallgam.docker/user/abc/outbox",
+    "https://amallgam.docker/user/abc/inbox",
+    "https://amallgam.docker/user/abc/outbox",
     "{}"
 );

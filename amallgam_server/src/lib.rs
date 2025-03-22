@@ -40,7 +40,7 @@ pub async fn create_router(config: Config) -> anyhow::Result<Router> {
 
     Ok(Router::new()
         .nest("/user", routes::user::router())
-        .nest("/.well_known", routes::well_known::router())
+        .nest("/.well-known", routes::well_known::router())
         .layer(FederationMiddleware::new(config)))
 }
 
@@ -91,7 +91,9 @@ mod routes {
             Query(query): Query<WebfingerQuery>,
             ctx: Data<AmallgamContext>,
         ) -> Result<Json<Webfinger>> {
+            log::info!("WebFinger for {}", query.resource);
             let name = extract_webfinger_name(&query.resource, &ctx)?;
+
             let db_user = ctx
                 .get_user_by_username(name)
                 .await?

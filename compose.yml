@@ -6,10 +6,12 @@ services:
       watch:
         - action: rebuild
           path: ./amallgam_server
+    volumes:
+      - "./extra/amallgam_ssl:/amallgam/ssl:z"
 
   # Mastodon and friends
   mastodon:
-    image: lscr.io/linuxserver/mastodon:latest
+    build: vendor/mastodon
     env_file:
       - "./vendor/mastodon/.env"
     environment:
@@ -30,8 +32,10 @@ services:
       SMTP_PASSWORD: mastodon
       SMTP_FROM_ADDRESS: notifications@smtp4dev
       S3_ENABLED: false
+      ALLOWED_PRIVATE_ADDRESSES: "172.18.0.1/16"
     volumes:
       - "./volumes/mastodon/config:/config:Z"
+      - "./extra/amallgam_ssl/cert.pem:/usr/local/share/ca-certificates/amallgam_cert.crt:z"
 
   mastodon_redis:
     image: redis:alpine
