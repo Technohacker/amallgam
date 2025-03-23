@@ -6,6 +6,8 @@ services:
       watch:
         - action: rebuild
           path: ./amallgam_server
+    environment:
+      RUST_LOG: info,tower_http=trace
     volumes:
       - "./extra/amallgam_ssl:/amallgam/ssl:z"
 

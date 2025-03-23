@@ -13,6 +13,7 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
+use tower_http::trace::TraceLayer;
 use users::ProtocolUser;
 
 mod context;
@@ -41,6 +42,7 @@ pub async fn create_router(config: Config) -> anyhow::Result<Router> {
     Ok(Router::new()
         .nest("/user", routes::user::router())
         .nest("/.well-known", routes::well_known::router())
+        .layer(TraceLayer::new_for_http())
         .layer(FederationMiddleware::new(config)))
 }
 

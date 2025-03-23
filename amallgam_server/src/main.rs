@@ -1,10 +1,15 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use rustls::crypto::ring;
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    pretty_env_logger::init_timed();
+    // 1. Initialize tracing + log bridging
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
     ring::default_provider()
         .install_default()
         .expect("Couldn't install crypto provider");
