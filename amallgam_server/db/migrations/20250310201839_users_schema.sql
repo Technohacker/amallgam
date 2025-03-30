@@ -15,7 +15,10 @@ CREATE TABLE users(
     outbox VARCHAR(1024) NOT NULL,
 
     -- Public Key
-    public_key VARCHAR(1024) NOT NULL
+    public_key VARCHAR(1024) NOT NULL,
+
+    -- Shared Inbox, optional
+    shared_inbox VARCHAR(1024)
 );
 
 /**

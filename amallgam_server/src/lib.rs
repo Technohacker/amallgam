@@ -17,10 +17,9 @@ use tower_http::trace::TraceLayer;
 use users::ProtocolUser;
 
 mod context;
-mod query_builders;
-mod users;
+mod objects;
 
-use self::context::AmallgamContext;
+use self::{context::AmallgamContext, objects::users::ProtocolUser};
 
 type Result<T> = std::result::Result<T, AppError>;
 
