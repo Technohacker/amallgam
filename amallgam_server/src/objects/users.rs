@@ -15,16 +15,16 @@ use crate::context::AmallgamContext;
 #[derive(Debug, Clone)]
 pub struct User {
     pub id: ObjectId<User>,
-    name: String,
-    preferred_username: String,
+    pub name: String,
+    pub preferred_username: String,
 
-    inbox: Url,
-    outbox: Url,
+    pub inbox: Url,
+    pub outbox: Url,
 
-    public_key: PublicKey,
-    private_key: Option<String>,
+    pub public_key_pem: String,
+    pub private_key_pem: Option<String>,
 
-    shared_inbox: Option<Url>,
+    pub shared_inbox: Option<Url>,
 }
 
 /// User data sent over the protocol
@@ -71,11 +71,11 @@ impl Object for User {
         Ok(Self::Kind {
             id: self.id.clone(),
             kind: PersonType::Person,
-            preferred_username: self.preferred_username,
-            name: self.name,
-            inbox: self.inbox,
-            outbox: self.outbox,
-            public_key: self.public_key,
+            preferred_username: self.preferred_username.clone(),
+            name: self.name.clone(),
+            inbox: self.inbox.clone(),
+            outbox: self.outbox.clone(),
+            public_key: self.public_key(),
             endpoints: self
                 .shared_inbox
                 .map(|shared_inbox| Endpoints { shared_inbox }),
@@ -102,8 +102,8 @@ impl Object for User {
             name: json.name,
             inbox: json.inbox,
             outbox: json.outbox,
-            public_key: json.public_key,
-            private_key: None,
+            public_key_pem: json.public_key.public_key_pem,
+            private_key_pem: None,
             shared_inbox: json.endpoints.map(|x| x.shared_inbox),
         };
 
@@ -119,15 +119,11 @@ impl Actor for User {
     }
 
     fn public_key_pem(&self) -> &str {
-        &self.public_key.public_key_pem
-    }
-
-    fn public_key(&self) -> PublicKey {
-        self.public_key.clone()
+        &self.public_key_pem
     }
 
     fn private_key_pem(&self) -> Option<String> {
-        self.private_key.clone()
+        self.private_key_pem.clone()
     }
 
     fn inbox(&self) -> Url {
@@ -163,7 +159,7 @@ impl AmallgamContext {
         sqlx::query(
             "
             INSERT INTO users (
-                id,
+                fed_id,
                 preferred_username,
                 name,
                 inbox,
@@ -175,8 +171,8 @@ impl AmallgamContext {
                 $3,
                 $4,
                 $5,
-                json($6)
-            ) ON CONFLICT UPDATE SET
+                $6
+            ) ON CONFLICT DO UPDATE SET
                 preferred_username = $2,
                 name = $3,
                 inbox = $4,
@@ -189,7 +185,7 @@ impl AmallgamContext {
         .bind(&user.name)
         .bind(user.inbox.to_string())
         .bind(user.outbox.to_string())
-        .bind(serde_json::to_string(&user.public_key)?)
+        .bind(&user.public_key_pem)
         .execute(self.db_connection())
         .await?;
 
@@ -236,11 +232,7 @@ impl FromRow<'_, SqliteRow> for User {
                 index: "outbox".into(),
                 source: Box::new(x),
             })?,
-            public_key: PublicKey {
-                id: row.get("fed_id"),
-                owner: Url::parse("http://example.com/user/abc").expect("A"),
-                public_key_pem: String::new(),
-            },
+            public_key_pem: row.get("public_key"),
             // TODO: Use this version for the pubkey
             // serde_json::from_str(row.get("public_key")).map_err(|x| {
             //     sqlx::Error::ColumnDecode {
@@ -248,7 +240,7 @@ impl FromRow<'_, SqliteRow> for User {
             //         source: Box::new(x),
             //     }
             // })?,
-            private_key: row.get("preferred_username"),
+            private_key_pem: row.get("private_key"),
             shared_inbox: row
                 .get::<Option<&str>, _>("shared_inbox")
                 .map(Url::parse)

@@ -41,20 +41,3 @@ CREATE TABLE bot_users(
 
     FOREIGN KEY(fed_id) REFERENCES users(fed_id)
 );
-
--- TODO: Remove this temp user
-INSERT INTO users (
-    fed_id,
-    preferred_username,
-    name,
-    inbox,
-    outbox,
-    public_key
-) VALUES (  
-    "https://amallgam.docker/user/abc",
-    "abc",
-    "Abc",
-    "https://amallgam.docker/user/abc/inbox",
-    "https://amallgam.docker/user/abc/outbox",
-    "{}"
-);
