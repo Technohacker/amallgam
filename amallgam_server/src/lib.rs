@@ -33,6 +33,7 @@ pub struct Config {
 
 pub async fn create_router(config: Config) -> anyhow::Result<Router> {
     let config = FederationConfig::builder()
+        .debug(true)
         .domain(config.domain_name)
         .app_data(AmallgamContext::new(&config.db_url).await?)
         .build()

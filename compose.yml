@@ -10,6 +10,10 @@ services:
       RUST_LOG: info,tower_http=trace
     volumes:
       - "./extra/amallgam_ssl:/amallgam/ssl:z"
+    networks:
+      default:
+        aliases:
+          - amallgam.docker
 
   # Mastodon and friends
   mastodon:
@@ -34,10 +38,14 @@ services:
       SMTP_PASSWORD: mastodon
       SMTP_FROM_ADDRESS: notifications@smtp4dev
       S3_ENABLED: false
-      ALLOWED_PRIVATE_ADDRESSES: "172.18.0.1/16"
+      ALLOWED_PRIVATE_ADDRESSES: "172.0.0.1/8"
     volumes:
       - "./volumes/mastodon/config:/config:Z"
       - "./extra/amallgam_ssl/cert.pem:/usr/local/share/ca-certificates/amallgam_cert.crt:z"
+    networks:
+      default:
+        aliases:
+          - mastodon.docker
 
   mastodon_redis:
     image: redis:alpine
