@@ -104,8 +104,9 @@ mod routes {
     }
 
     pub mod well_known {
-        use activitypub_federation::fetch::webfinger::{
-            Webfinger, build_webfinger_response, extract_webfinger_name,
+        use activitypub_federation::{
+            fetch::webfinger::{Webfinger, build_webfinger_response, extract_webfinger_name},
+            traits::Actor,
         };
 
         use super::*;
@@ -131,10 +132,7 @@ mod routes {
                 .await?
                 .ok_or_else(|| anyhow::format_err!("User not found"))?;
 
-            Ok(Json(build_webfinger_response(
-                query.resource,
-                db_user.id.into_inner(),
-            )))
+            Ok(Json(build_webfinger_response(query.resource, db_user.id())))
         }
     }
 }

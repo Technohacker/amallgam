@@ -1,7 +1,5 @@
 use activitypub_federation::{
-    config::Data,
-    fetch::object_id::ObjectId,
-    traits::{ActivityHandler, Actor},
+    config::Data, fetch::object_id::ObjectId, http_signatures, traits::{ActivityHandler, Actor}
 };
 use axum::async_trait;
 use serde::{Deserialize, Serialize};
@@ -19,17 +17,36 @@ pub use protocol::ProtocolUser;
 /// User data stored persistently
 #[derive(Debug, Clone)]
 pub struct User {
-    pub id: ObjectId<User>,
-    pub name: String,
-    pub preferred_username: String,
+    id: ObjectId<User>,
+    name: String,
+    preferred_username: String,
 
-    pub inbox: Url,
-    pub outbox: Url,
+    inbox: Url,
+    outbox: Url,
 
-    pub public_key_pem: String,
-    pub private_key_pem: Option<String>,
+    public_key_pem: String,
+    private_key_pem: Option<String>,
 
-    pub shared_inbox: Option<Url>,
+    shared_inbox: Option<Url>,
+}
+
+impl User {
+    pub fn new(user_id: &str) -> Self {
+        let kp = http_signatures::generate_actor_keypair().expect("Failed to generate KeyPair?");
+
+        let url_base = format!("https://amallgam.docker/user/{user_id}");
+
+        Self {
+            id: url_base.parse().unwrap(),
+            preferred_username: user_id.into(),
+            name: user_id.into(),
+            inbox: format!("{url_base}/inbox").parse().unwrap(),
+            outbox: format!("{url_base}/outbox").parse().unwrap(),
+            public_key_pem: kp.public_key,
+            private_key_pem: Some(kp.private_key),
+            shared_inbox: None,
+        }
+    }
 }
 
 impl Actor for User {
