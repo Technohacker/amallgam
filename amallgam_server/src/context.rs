@@ -21,7 +21,7 @@ impl AmallgamContext {
 
         // TODO: Remove this temporary user
         let kp = generate_actor_keypair().unwrap();
-        ctx.upsert_user(User {
+        ctx.upsert_user(&User {
             id: "https://amallgam.docker/user/abc".parse().unwrap(),
             preferred_username: "abc".into(),
             name: "Abc".into(),

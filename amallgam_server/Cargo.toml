@@ -6,15 +6,14 @@ edition = "2024"
 [dependencies]
 activitypub_federation = { version = "0.6", features = ["axum"] }
 anyhow = "1.0"
-async-trait = "0.1"
 axum = { version = "0.7", features = ["macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
-hostname = "0.4"
+enum_delegate = "0.2"
 log = "0.4"
 multi_index_map = "0.11"
+reqwest-middleware = "0.3"
 rustls = "0.23"
 serde = "1.0"
-serde_json = "1.0"
 tracing-subscriber = { version = "0.3", features=["env-filter"] }
 tokio = { version = "1.43", features = ["full"] }
 tower = "0.5"

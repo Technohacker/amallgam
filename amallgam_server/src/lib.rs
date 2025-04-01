@@ -10,16 +10,16 @@ use axum::{
     extract::{Path, Query},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
-use users::ProtocolUser;
 
+mod activities;
 mod context;
 mod objects;
 
-use self::{context::AmallgamContext, objects::users::ProtocolUser};
+use self::context::AmallgamContext;
 
 type Result<T> = std::result::Result<T, AppError>;
 
@@ -39,9 +39,11 @@ pub async fn create_router(config: Config) -> anyhow::Result<Router> {
         .build()
         .await?;
 
-    Ok(Router::new()
-        .nest("/user", routes::user::router())
-        .nest("/.well-known", routes::well_known::router())
+    let router = Router::new();
+    let router = routes::user::configure_router(router);
+    let router = routes::well_known::configure_router(router);
+
+    Ok(router
         .layer(TraceLayer::new_for_http())
         .layer(FederationMiddleware::new(config)))
 }
@@ -50,10 +52,16 @@ mod routes {
     use super::*;
 
     pub mod user {
+        use activitypub_federation::{axum::inbox::ActivityData, axum::inbox::receive_activity};
+
+        use crate::objects::users::{ProtocolUser, User, UserAllowedActivities};
+
         use super::*;
 
-        pub fn router() -> Router {
-            Router::new().route("/:user_name", get(get_user_by_name))
+        pub fn configure_router(router: Router) -> Router {
+            router
+                .route("/user/:user_name", get(get_user_by_name))
+                .route("/user/:user_name/inbox", post(handle_user_inbox))
         }
 
         #[axum::debug_handler]
@@ -71,6 +79,14 @@ mod routes {
 
             Ok(FederationJson(WithContext::new_default(user)))
         }
+
+        #[axum::debug_handler]
+        async fn handle_user_inbox(
+            ctx: Data<AmallgamContext>,
+            activity: ActivityData,
+        ) -> Result<()> {
+            Ok(receive_activity::<UserAllowedActivities, User, _>(activity, &ctx).await?)
+        }
     }
 
     pub mod well_known {
@@ -80,8 +96,8 @@ mod routes {
 
         use super::*;
 
-        pub fn router() -> Router {
-            Router::new().route("/webfinger", get(webfinger))
+        pub fn configure_router(router: Router) -> Router {
+            router.route("/.well-known/webfinger", get(webfinger))
         }
 
         #[derive(Deserialize)]
@@ -110,16 +126,19 @@ mod routes {
 }
 
 // Make our own error that wraps `anyhow::Error`.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct AppError {
     #[serde(skip)]
     pub status: StatusCode,
+    #[serde(skip)]
+    pub error: anyhow::Error,
     pub message: String,
 }
 
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        log::error!("Error! {:?}", &self.error);
         (self.status, Json(self)).into_response()
     }
 }
@@ -135,6 +154,7 @@ where
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: format!("{err}"),
+            error: err,
         }
     }
 }
