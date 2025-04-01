@@ -1,5 +1,7 @@
 use activitypub_federation::{
-    config::Data, fetch::object_id::ObjectId, http_signatures, traits::{ActivityHandler, Actor}
+    config::Data,
+    http_signatures,
+    traits::{ActivityHandler, Actor},
 };
 use axum::async_trait;
 use serde::{Deserialize, Serialize};
@@ -14,60 +16,83 @@ mod protocol;
 
 pub use protocol::ProtocolUser;
 
-/// User data stored persistently
+/// User data
 #[derive(Debug, Clone)]
-pub struct User {
-    id: ObjectId<User>,
-    name: String,
-    preferred_username: String,
+pub enum User {
+    Local {
+        base_url: Url,
 
-    inbox: Url,
-    outbox: Url,
+        user_id: String,
+        display_name: String,
 
-    public_key_pem: String,
-    private_key_pem: Option<String>,
-
-    shared_inbox: Option<Url>,
+        public_key_pem: String,
+        private_key_pem: String,
+    },
+    Remote(Box<ProtocolUser>),
 }
 
-impl User {
-    pub fn new(user_id: &str) -> Self {
+impl AmallgamContext {
+    fn user_base_url(&self, user_id: &str) -> Url {
+        self.server_base_url()
+            .join(&format!("/user/{user_id}"))
+            .expect("Bad URL for user?")
+    }
+
+    pub fn new_bot_user(&self, user_id: &str) -> User {
         let kp = http_signatures::generate_actor_keypair().expect("Failed to generate KeyPair?");
 
-        let url_base = format!("https://amallgam.docker/user/{user_id}");
+        User::Local {
+            base_url: self.user_base_url(user_id),
 
-        Self {
-            id: url_base.parse().unwrap(),
-            preferred_username: user_id.into(),
-            name: user_id.into(),
-            inbox: format!("{url_base}/inbox").parse().unwrap(),
-            outbox: format!("{url_base}/outbox").parse().unwrap(),
+            user_id: user_id.to_string(),
+            display_name: user_id.to_string(),
+
             public_key_pem: kp.public_key,
-            private_key_pem: Some(kp.private_key),
-            shared_inbox: None,
+            private_key_pem: kp.private_key,
         }
     }
 }
 
 impl Actor for User {
     fn id(&self) -> Url {
-        self.id.inner().clone()
+        match self {
+            User::Local { base_url, .. } => base_url,
+            User::Remote(protocol_user) => protocol_user.id.inner(),
+        }
+        .clone()
     }
 
     fn public_key_pem(&self) -> &str {
-        &self.public_key_pem
+        match self {
+            User::Local { public_key_pem, .. } => public_key_pem,
+            User::Remote(protocol_user) => &protocol_user.public_key.public_key_pem,
+        }
     }
 
     fn private_key_pem(&self) -> Option<String> {
-        self.private_key_pem.clone()
+        match self {
+            User::Local {
+                private_key_pem, ..
+            } => Some(private_key_pem.clone()),
+            User::Remote(_) => None,
+        }
     }
 
     fn inbox(&self) -> Url {
-        self.inbox.clone()
+        match self {
+            User::Local { base_url, .. } => base_url.join("/inbox").expect("Bad Inbox URL?"),
+            User::Remote(protocol_user) => protocol_user.inbox.clone(),
+        }
     }
 
     fn shared_inbox(&self) -> Option<Url> {
-        self.shared_inbox.clone()
+        match self {
+            User::Local { .. } => None,
+            User::Remote(protocol_user) => protocol_user
+                .endpoints
+                .as_ref()
+                .map(|x| x.shared_inbox.clone()),
+        }
     }
 }
 
@@ -98,6 +123,8 @@ impl ActivityHandler for Create<Note> {
     async fn receive(self, data: &Data<Self::DataType>) -> Result<(), Self::Error> {
         // log::info!("{:#?}", &self);
 
-        Err(anyhow::format_err!("Temporary error to test receiving notes"))
+        Err(anyhow::format_err!(
+            "Temporary error to test receiving notes"
+        ))
     }
 }

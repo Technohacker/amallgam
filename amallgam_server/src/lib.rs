@@ -17,6 +17,7 @@ use axum::{
 use reqwest_middleware::reqwest::{Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
+use url::Url;
 
 mod activities;
 mod context;
@@ -36,20 +37,22 @@ pub struct Config {
 
 pub async fn create_router(config: Config) -> anyhow::Result<Router> {
     let timeout = Duration::from_secs(10);
-    let config = FederationConfig::builder()
-        .client(
-            Client::builder()
-                .danger_accept_invalid_certs(true)
-                .redirect(Policy::none())
-                .timeout(timeout)
-                .connect_timeout(timeout)
-                .build()
-                .expect("Couldn't construct reqwest Client?")
-                .into(),
-        )
+    let http_client = Client::builder()
+        .danger_accept_invalid_certs(true)
+        .redirect(Policy::none())
+        .timeout(timeout)
+        .connect_timeout(timeout)
+        .build()
+        .expect("Couldn't construct reqwest Client?");
+
+    let server_base_url =
+        Url::parse(&format!("https://{}", &config.domain_name)).expect("Bad Server Base URL?");
+
+    let fed_config = FederationConfig::builder()
+        .client(http_client.into())
         .debug(true)
         .domain(config.domain_name)
-        .app_data(AmallgamContext::new(&config.db_url).await?)
+        .app_data(AmallgamContext::new(server_base_url, &config.db_url).await?)
         .build()
         .await?;
 
@@ -59,7 +62,7 @@ pub async fn create_router(config: Config) -> anyhow::Result<Router> {
 
     Ok(router
         .layer(TraceLayer::new_for_http())
-        .layer(FederationMiddleware::new(config)))
+        .layer(FederationMiddleware::new(fed_config)))
 }
 
 mod routes {
@@ -74,18 +77,17 @@ mod routes {
 
         pub fn configure_router(router: Router) -> Router {
             router
-                .route("/user/:user_name", get(get_user_by_name))
-                .route("/user/:user_name/inbox", post(handle_user_inbox))
+                .route("/user/:user_id", get(get_user_by_userid))
+                .route("/user/:user_id/inbox", post(handle_user_inbox))
         }
 
         #[axum::debug_handler]
-        async fn get_user_by_name(
-            Path(user_name): Path<String>,
+        async fn get_user_by_userid(
+            Path(user_id): Path<String>,
             ctx: Data<AmallgamContext>,
         ) -> Result<FederationJson<WithContext<ProtocolUser>>> {
             let user = ctx
-                .app_data()
-                .get_user_by_username(&user_name)
+                .get_bot_user_by_userid(&user_id)
                 .await?
                 .ok_or_else(|| anyhow::format_err!("User not found"))?;
 
@@ -125,10 +127,10 @@ mod routes {
             ctx: Data<AmallgamContext>,
         ) -> Result<Json<Webfinger>> {
             log::info!("WebFinger for {}", query.resource);
-            let name = extract_webfinger_name(&query.resource, &ctx)?;
+            let user_id = extract_webfinger_name(&query.resource, &ctx)?;
 
             let db_user = ctx
-                .get_user_by_username(name)
+                .get_bot_user_by_userid(user_id)
                 .await?
                 .ok_or_else(|| anyhow::format_err!("User not found"))?;
 

@@ -1,35 +1,15 @@
 /**
-* Table for Federated User Data
-*/
-CREATE TABLE users(
-    -- Federation ID, URL
-    fed_id VARCHAR(1024) PRIMARY KEY,
-
-    -- Permanent User ID
-    preferred_username VARCHAR(1024) NOT NULL,
-    -- Editable name
-    name VARCHAR(1024) NOT NULL,
-
-    -- Links for submitting Actions
-    inbox VARCHAR(1024) NOT NULL,
-    outbox VARCHAR(1024) NOT NULL,
-
-    -- Public Key
-    public_key VARCHAR(1024) NOT NULL,
-
-    -- Shared Inbox, optional
-    shared_inbox VARCHAR(1024)
-);
-
-/**
-* Table with extra data for local Bot users
+* Table for Local Bot Users
 */
 CREATE TABLE bot_users(
-    -- Federation ID, URL
-    fed_id VARCHAR(1024) PRIMARY KEY,
+    -- Permanent User ID
+    user_id VARCHAR(1024) PRIMARY KEY,
+    -- Editable name
+    display_name VARCHAR(1024) NOT NULL,
 
-    -- Private Key for signing
+    -- Signing Keys
     private_key VARCHAR(1024) NOT NULL,
+    public_key VARCHAR(1024) NOT NULL
 
     -- TODO: Use these once the tables are ready
 
@@ -38,6 +18,4 @@ CREATE TABLE bot_users(
 
     -- Inference Parameters ID
     -- inference_params_id INTEGER NOT NULL,
-
-    FOREIGN KEY(fed_id) REFERENCES users(fed_id)
 );

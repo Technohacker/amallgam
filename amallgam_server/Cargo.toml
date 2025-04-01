@@ -10,7 +10,7 @@ axum = { version = "0.7", features = ["macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 enum_delegate = "0.2"
 log = "0.4"
-multi_index_map = "0.11"
+moka = { version = "0.12", features = ["future"] }
 reqwest-middleware = "0.3"
 rustls = "0.23"
 serde = "1.0"

@@ -13,29 +13,29 @@ use crate::context::AmallgamContext;
 use super::User;
 
 /// User data sent over the protocol
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolUser {
-    id: ObjectId<User>,
+    pub id: ObjectId<User>,
     #[serde(rename = "type")]
-    kind: PersonType,
+    pub kind: PersonType,
 
-    preferred_username: String,
-    name: String,
+    pub preferred_username: String,
+    pub name: String,
 
-    inbox: Url,
-    outbox: Url,
+    pub inbox: Url,
+    pub outbox: Url,
 
-    public_key: PublicKey,
+    pub public_key: PublicKey,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    endpoints: Option<Endpoints>,
+    pub endpoints: Option<Endpoints>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Endpoints {
-    shared_inbox: Url,
+    pub shared_inbox: Url,
 }
 
 #[axum::async_trait]
@@ -49,22 +49,38 @@ impl Object for User {
         ctx: &Data<Self::DataType>,
     ) -> Result<Option<Self>, Self::Error> {
         // May be local or remote
-        ctx.get_user_by_id(&object_id).await
+        if ctx.is_local_url(&object_id) {
+            // Local, grab the user ID
+            let Some((_, user_id)) = object_id.path().rsplit_once("/") else {
+                return Err(anyhow::format_err!("Bad Local User URL?"));
+            };
+
+            ctx.get_bot_user_by_userid(user_id).await
+        } else {
+            // TODO: Use local cache
+            Ok(None)
+        }
     }
 
     async fn into_json(self, _ctx: &Data<Self::DataType>) -> Result<Self::Kind, Self::Error> {
-        Ok(Self::Kind {
-            id: self.id.clone(),
-            kind: PersonType::Person,
-            preferred_username: self.preferred_username.clone(),
-            name: self.name.clone(),
-            inbox: self.inbox.clone(),
-            outbox: self.outbox.clone(),
-            public_key: self.public_key(),
-            endpoints: self
-                .shared_inbox
-                .map(|shared_inbox| Endpoints { shared_inbox }),
-        })
+        match &self {
+            User::Local {
+                base_url,
+                user_id,
+                display_name,
+                ..
+            } => Ok(ProtocolUser {
+                id: base_url.clone().into(),
+                kind: PersonType::Person,
+                preferred_username: user_id.clone(),
+                name: display_name.clone(),
+                inbox: base_url.join("/inbox").expect("Bad Inbox URL?"),
+                outbox: base_url.join("/outbox").expect("Bad Inbox URL?"),
+                public_key: self.public_key(),
+                endpoints: None,
+            }),
+            User::Remote(protocol_user) => Ok(*protocol_user.clone()),
+        }
     }
 
     async fn verify(
@@ -79,18 +95,9 @@ impl Object for User {
 
     async fn from_json(json: Self::Kind, ctx: &Data<Self::DataType>) -> Result<Self, Self::Error> {
         // Only called for remote users
-        let user = Self {
-            id: json.id,
-            preferred_username: json.preferred_username,
-            name: json.name,
-            inbox: json.inbox,
-            outbox: json.outbox,
-            public_key_pem: json.public_key.public_key_pem,
-            private_key_pem: None,
-            shared_inbox: json.endpoints.map(|x| x.shared_inbox),
-        };
+        let user = Self::Remote(Box::new(json));
 
-        ctx.app_data().upsert_user(&user).await?;
+        // TODO: Insert into cache
 
         Ok(user)
     }

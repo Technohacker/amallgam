@@ -11,7 +11,7 @@ use url::Url;
 use crate::{context::AmallgamContext, objects::users::User};
 
 /// Note data
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Note {
     pub id: ObjectId<Note>,
