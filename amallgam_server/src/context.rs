@@ -3,14 +3,13 @@ use moka::future::Cache;
 use sqlx::SqlitePool;
 use url::Url;
 
-use crate::objects::{notes::Note, users::ProtocolUser};
+use crate::objects::users::ProtocolUser;
 
 #[derive(Debug, Clone)]
 pub struct AmallgamContext {
     server_base_url: Url,
 
-    remote_user_cache: Cache<Url, ProtocolUser>,
-    note_cache: Cache<Url, Note>,
+    pub(crate) remote_user_cache: Cache<Url, ProtocolUser>,
 
     db_connection: SqlitePool,
 }
@@ -21,7 +20,6 @@ impl AmallgamContext {
             server_base_url,
 
             remote_user_cache: Cache::new(1024),
-            note_cache: Cache::new(1024),
 
             db_connection: SqlitePool::connect(db_url).await?,
         };
@@ -31,18 +29,16 @@ impl AmallgamContext {
             .await?;
 
         // TODO: Remove this temporary user
-        let user = ctx.new_bot_user("abc");
-        ctx.upsert_user(&user).await.unwrap();
+        let user = ctx.new_bot_user("def");
+        ctx.upsert_user(user).await.unwrap();
 
         Ok(ctx)
     }
 
-    pub(crate) fn server_base_url(&self) -> &Url {
-        &self.server_base_url
-    }
-
-    pub(crate) fn is_local_url(&self, url: &Url) -> bool {
-        url.scheme() == self.server_base_url.scheme() && url.host() == self.server_base_url.host()
+    pub(crate) fn server_relative_url(&self, suffix: &str) -> Url {
+        self.server_base_url
+            .join(suffix)
+            .expect("Bad Server-relative URL?")
     }
 
     pub(crate) fn db_connection(&self) -> &SqlitePool {

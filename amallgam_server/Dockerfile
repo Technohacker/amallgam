@@ -14,6 +14,9 @@ RUN cargo build
 
 FROM alpine
 WORKDIR /amallgam
+
+RUN apk update && apk add ca-certificates
+
 COPY --from=builder /usr/src/amallgam/target/debug/amallgam /usr/local/bin/amallgam
 
 ENV RUST_LOG info

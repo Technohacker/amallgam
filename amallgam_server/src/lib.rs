@@ -77,7 +77,7 @@ mod routes {
 
         pub fn configure_router(router: Router) -> Router {
             router
-                .route("/user/:user_id", get(get_user_by_userid))
+                .route("/user/:user_id/", get(get_user_by_userid))
                 .route("/user/:user_id/inbox", post(handle_user_inbox))
         }
 

@@ -1,7 +1,5 @@
 use activitypub_federation::{
-    config::Data,
-    http_signatures,
-    traits::{ActivityHandler, Actor},
+    activity_sending::SendActivityTask, config::Data, fetch::object_id::ObjectId, http_signatures, kinds::public, protocol::context::WithContext, traits::{ActivityHandler, Actor}
 };
 use axum::async_trait;
 use serde::{Deserialize, Serialize};
@@ -9,7 +7,7 @@ use url::Url;
 
 use crate::{activities::create::Create, context::AmallgamContext};
 
-use super::notes::Note;
+use super::notes::{Mention, Note};
 
 mod db;
 mod protocol;
@@ -33,9 +31,7 @@ pub enum User {
 
 impl AmallgamContext {
     fn user_base_url(&self, user_id: &str) -> Url {
-        self.server_base_url()
-            .join(&format!("/user/{user_id}"))
-            .expect("Bad URL for user?")
+        self.server_relative_url(&format!("./user/{user_id}/"))
     }
 
     pub fn new_bot_user(&self, user_id: &str) -> User {
@@ -80,7 +76,7 @@ impl Actor for User {
 
     fn inbox(&self) -> Url {
         match self {
-            User::Local { base_url, .. } => base_url.join("/inbox").expect("Bad Inbox URL?"),
+            User::Local { base_url, .. } => base_url.join("./inbox").expect("Bad Inbox URL?"),
             User::Remote(protocol_user) => protocol_user.inbox.clone(),
         }
     }
@@ -116,15 +112,56 @@ impl ActivityHandler for Create<Note> {
         self.actor.inner()
     }
 
-    async fn verify(&self, data: &Data<Self::DataType>) -> Result<(), Self::Error> {
+    async fn verify(&self, _ctx: &Data<Self::DataType>) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    async fn receive(self, data: &Data<Self::DataType>) -> Result<(), Self::Error> {
-        // log::info!("{:#?}", &self);
+    async fn receive(self, ctx: &Data<Self::DataType>) -> Result<(), Self::Error> {
+        let note_id: ObjectId<Note> = self.object.id;
+        log::info!("Note Received: {}", &note_id);
 
-        Err(anyhow::format_err!(
-            "Temporary error to test receiving notes"
-        ))
+        let sender_id = &self.object.attributed_to;
+        let reply_inboxes = vec![sender_id.dereference(ctx).await?.shared_inbox_or_inbox()];
+
+        let mentioned_bots = self.object.tag.iter().filter(|x| x.href.is_local(ctx));
+
+        let replies = mentioned_bots.map(|mention| {
+            let bot_id = &mention.href;
+            log::info!("\tBot Mentioned: {}", &bot_id);
+
+            ctx.new_create_activity(
+                bot_id.clone(),
+                vec![public()],
+                vec![],
+                ctx.new_note(
+                    bot_id.clone(),
+                    vec![public()],
+                    vec![sender_id.inner().clone()],
+                    "Hello!",
+                    Some(note_id.clone()),
+                    [Mention::for_user(sender_id.clone())],
+                ),
+            )
+        });
+
+        for activity in replies {
+            log::info!("Creating Reply: {}", activity.id);
+            let bot_user = activity
+                .actor
+                .dereference_local(ctx)
+                .await
+                .expect("Missing bot user?");
+
+            let msg = WithContext::new_default(activity);
+
+            let sends =
+                SendActivityTask::prepare(&msg, &bot_user, reply_inboxes.clone(), ctx).await?;
+
+            for send in sends {
+                send.sign_and_send(ctx).await?;
+            }
+        }
+
+        Ok(())
     }
 }

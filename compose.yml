@@ -7,9 +7,10 @@ services:
         - action: rebuild
           path: ./amallgam_server
     environment:
-      RUST_LOG: info,tower_http=trace
+      RUST_LOG: info,activitypub_federation=debug,tower_http=trace
     volumes:
       - "./extra/amallgam_ssl:/amallgam/ssl:z"
+      - "./extra/mastodon_ssl/cert.crt:/usr/local/share/ca-certificates/mastodon_cert.crt:z"
     networks:
       default:
         aliases:
@@ -41,6 +42,7 @@ services:
       ALLOWED_PRIVATE_ADDRESSES: "172.0.0.1/8"
     volumes:
       - "./volumes/mastodon/config:/config:Z"
+      - "./extra/mastodon_ssl:/config/keys:z"
       - "./extra/amallgam_ssl/cert.pem:/usr/local/share/ca-certificates/amallgam_cert.crt:z"
     networks:
       default:

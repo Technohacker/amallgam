@@ -49,9 +49,11 @@ impl Object for User {
         ctx: &Data<Self::DataType>,
     ) -> Result<Option<Self>, Self::Error> {
         // May be local or remote
-        if ctx.is_local_url(&object_id) {
+        let object_id: ObjectId<User> = ObjectId::from(object_id);
+
+        if object_id.is_local(ctx) {
             // Local, grab the user ID
-            let Some((_, user_id)) = object_id.path().rsplit_once("/") else {
+            let Some((_, user_id)) = object_id.inner().path().trim_end_matches('/').rsplit_once("/") else {
                 return Err(anyhow::format_err!("Bad Local User URL?"));
             };
 
@@ -74,8 +76,8 @@ impl Object for User {
                 kind: PersonType::Person,
                 preferred_username: user_id.clone(),
                 name: display_name.clone(),
-                inbox: base_url.join("/inbox").expect("Bad Inbox URL?"),
-                outbox: base_url.join("/outbox").expect("Bad Inbox URL?"),
+                inbox: base_url.join("./inbox").expect("Bad Inbox URL?"),
+                outbox: base_url.join("./outbox").expect("Bad Inbox URL?"),
                 public_key: self.public_key(),
                 endpoints: None,
             }),
@@ -97,7 +99,7 @@ impl Object for User {
         // Only called for remote users
         let user = Self::Remote(Box::new(json));
 
-        // TODO: Insert into cache
+        ctx.upsert_user(user.clone()).await?;
 
         Ok(user)
     }

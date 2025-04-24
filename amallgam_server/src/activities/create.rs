@@ -1,15 +1,19 @@
-use activitypub_federation::{fetch::object_id::ObjectId, kinds::activity::CreateType, protocol::helpers::deserialize_one_or_many};
+use activitypub_federation::{
+    fetch::object_id::ObjectId, kinds::activity::CreateType,
+    protocol::helpers::deserialize_one_or_many,
+};
 use serde::{Deserialize, Serialize};
 use url::Url;
+use uuid::Uuid;
 
-use crate::objects::users::User;
+use crate::{context::AmallgamContext, objects::users::User};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Create<T> {
     pub id: Url,
     #[serde(rename = "type")]
-    pub kind: CreateType,
+    kind: CreateType,
 
     pub actor: ObjectId<User>,
 
@@ -18,7 +22,24 @@ pub struct Create<T> {
     #[serde(deserialize_with = "deserialize_one_or_many")]
     pub cc: Vec<Url>,
 
-    // #[serde(skip)]
-    // #[serde(default = "None")]
     pub object: T,
+}
+
+impl AmallgamContext {
+    pub fn new_create_activity<T>(
+        &self,
+        actor: ObjectId<User>,
+        to: impl Into<Vec<Url>>,
+        cc: impl Into<Vec<Url>>,
+        object: T
+    ) -> Create<T> {
+        Create {
+            id: self.server_relative_url(&format!("./creates/{}", Uuid::now_v7())),
+            kind: CreateType::Create,
+            actor,
+            to: to.into(),
+            cc: cc.into(),
+            object,
+        }
+    }
 }

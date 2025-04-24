@@ -7,6 +7,7 @@ use activitypub_federation::{
 };
 use serde::{Deserialize, Serialize};
 use url::Url;
+use uuid::Uuid;
 
 use crate::{context::AmallgamContext, objects::users::User};
 
@@ -34,9 +35,43 @@ pub struct Note {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Mention {
-    pub href: Url,
+    pub href: ObjectId<User>,
     #[serde(rename = "type")]
-    pub kind: MentionType,
+    kind: MentionType,
+}
+
+impl Mention {
+    pub fn for_user(user_id: ObjectId<User>) -> Self {
+        Self {
+            href: user_id,
+            kind: MentionType::Mention,
+        }
+    }
+}
+
+impl AmallgamContext {
+    pub fn new_note(
+        &self,
+        attributed_to: ObjectId<User>,
+        to: impl Into<Vec<Url>>,
+        cc: impl Into<Vec<Url>>,
+        content: impl Into<String>,
+        in_reply_to: Option<ObjectId<Note>>,
+        mentions: impl Into<Vec<Mention>>,
+    ) -> Note {
+        Note {
+            id: self
+                .server_relative_url(&format!("./notes/{}", Uuid::now_v7()))
+                .into(),
+            kind: NoteType::Note,
+            attributed_to,
+            to: to.into(),
+            cc: cc.into(),
+            content: content.into(),
+            in_reply_to,
+            tag: mentions.into(),
+        }
+    }
 }
 
 #[axum::async_trait]
@@ -49,7 +84,15 @@ impl Object for Note {
         object_id: Url,
         ctx: &Data<Self::DataType>,
     ) -> Result<Option<Self>, Self::Error> {
+        let id: ObjectId<Note> = ObjectId::from(object_id);
+
         // May be local or remote
+        if id.is_local(ctx) {
+            // Local
+        } else {
+            // Remote
+        }
+
         Ok(None)
     }
 
@@ -67,7 +110,7 @@ impl Object for Note {
         Ok(())
     }
 
-    async fn from_json(json: Self::Kind, ctx: &Data<Self::DataType>) -> Result<Self, Self::Error> {
+    async fn from_json(json: Self::Kind, _ctx: &Data<Self::DataType>) -> Result<Self, Self::Error> {
         // Only called for remote notes
         Ok(json)
     }

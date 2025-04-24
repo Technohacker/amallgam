@@ -5,10 +5,16 @@ use crate::context::AmallgamContext;
 use super::User;
 
 impl AmallgamContext {
-    pub async fn upsert_user(&self, user: &User) -> anyhow::Result<()> {
+    pub async fn upsert_user(&self, user: User) -> anyhow::Result<()> {
         match user {
             User::Remote(protocol_user) => {
                 // Remote users are kept in cache
+                self.remote_user_cache
+                    .insert(
+                        protocol_user.id.inner().clone(),
+                        *protocol_user,
+                    )
+                    .await;
             }
             User::Local {
                 user_id,
