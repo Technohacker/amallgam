@@ -8,7 +8,7 @@ use activitypub_federation::{
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::context::AmallgamContext;
+use crate::context::ArcAmallgamContext;
 
 use super::User;
 
@@ -40,7 +40,7 @@ pub struct Endpoints {
 
 #[axum::async_trait]
 impl Object for User {
-    type DataType = AmallgamContext;
+    type DataType = ArcAmallgamContext;
     type Kind = ProtocolUser;
     type Error = anyhow::Error;
 

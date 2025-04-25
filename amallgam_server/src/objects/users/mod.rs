@@ -1,11 +1,17 @@
 use activitypub_federation::{
-    activity_sending::SendActivityTask, config::Data, fetch::object_id::ObjectId, http_signatures, kinds::public, protocol::context::WithContext, traits::{ActivityHandler, Actor}
+    config::Data,
+    http_signatures,
+    kinds::public,
+    traits::{ActivityHandler, Actor},
 };
 use axum::async_trait;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{activities::create::Create, context::AmallgamContext};
+use crate::{
+    activities::{PendingActivity, create::Create},
+    context::{AmallgamContext, ArcAmallgamContext},
+};
 
 use super::notes::{Mention, Note};
 
@@ -101,7 +107,7 @@ pub enum UserAllowedActivities {
 
 #[async_trait]
 impl ActivityHandler for Create<Note> {
-    type DataType = AmallgamContext;
+    type DataType = ArcAmallgamContext;
     type Error = anyhow::Error;
 
     fn id(&self) -> &Url {
@@ -117,49 +123,58 @@ impl ActivityHandler for Create<Note> {
     }
 
     async fn receive(self, ctx: &Data<Self::DataType>) -> Result<(), Self::Error> {
-        let note_id: ObjectId<Note> = self.object.id;
-        log::info!("Note Received: {}", &note_id);
+        let note_id = &self.object.id;
+        log::info!("Note Received: {}", note_id);
 
         let sender_id = &self.object.attributed_to;
-        let reply_inboxes = vec![sender_id.dereference(ctx).await?.shared_inbox_or_inbox()];
+        let target_inboxes = vec![sender_id.dereference(ctx).await?.shared_inbox_or_inbox()];
 
         let mentioned_bots = self.object.tag.iter().filter(|x| x.href.is_local(ctx));
 
-        let replies = mentioned_bots.map(|mention| {
-            let bot_id = &mention.href;
+        for mention in mentioned_bots {
+            let bot_id = mention.href.clone();
             log::info!("\tBot Mentioned: {}", &bot_id);
 
-            ctx.new_create_activity(
-                bot_id.clone(),
-                vec![public()],
-                vec![],
-                ctx.new_note(
-                    bot_id.clone(),
-                    vec![public()],
-                    vec![sender_id.inner().clone()],
-                    "Hello!",
-                    Some(note_id.clone()),
-                    [Mention::for_user(sender_id.clone())],
-                ),
-            )
-        });
+            let arc_ctx = ctx.app_data().clone();
 
-        for activity in replies {
-            log::info!("Creating Reply: {}", activity.id);
-            let bot_user = activity
-                .actor
-                .dereference_local(ctx)
-                .await
-                .expect("Missing bot user?");
+            let note_id = note_id.clone();
+            let sender_id = sender_id.clone();
+            let target_inboxes = target_inboxes.clone();
+            let message = self.object.content.clone();
 
-            let msg = WithContext::new_default(activity);
+            ctx.queue_up_pending_note(async move {
+                let mut llama_ctx = arc_ctx.llama_context.write().await;
+                let reset_toks = llama_ctx.context_size();
 
-            let sends =
-                SendActivityTask::prepare(&msg, &bot_user, reply_inboxes.clone(), ctx).await?;
+                llama_ctx
+                    .advance_context_async(message + "\n\nAssistant: ").await?;
 
-            for send in sends {
-                send.sign_and_send(ctx).await?;
-            }
+                let message = llama_ctx
+                    .start_completing()?
+                    .into_strings()
+                    .take(1024)
+                    .reduce(|msg, next| msg + &next)
+                    .unwrap_or_default();
+
+                llama_ctx.truncate_context(reset_toks)?;
+
+                Ok(PendingActivity {
+                    activity: arc_ctx.new_create_activity(
+                        bot_id.clone(),
+                        vec![public()],
+                        vec![],
+                        arc_ctx.new_note(
+                            bot_id.clone(),
+                            vec![public()],
+                            vec![sender_id.inner().clone()],
+                            message,
+                            Some(note_id),
+                            [Mention::for_user(sender_id.clone())],
+                        ),
+                    ),
+                    target_inboxes,
+                })
+            });
         }
 
         Ok(())

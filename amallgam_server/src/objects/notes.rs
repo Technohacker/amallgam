@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::{context::AmallgamContext, objects::users::User};
+use crate::{context::{AmallgamContext, ArcAmallgamContext}, objects::users::User};
 
 /// Note data
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -76,7 +76,7 @@ impl AmallgamContext {
 
 #[axum::async_trait]
 impl Object for Note {
-    type DataType = AmallgamContext;
+    type DataType = ArcAmallgamContext;
     type Kind = Self;
     type Error = anyhow::Error;
 

@@ -1,7 +1,7 @@
-FROM rust:alpine AS builder
+FROM rust:1.86-bookworm AS builder
 WORKDIR /usr/src/amallgam
 
-RUN apk update && apk add build-base
+RUN apt-get update && apt-get install -y build-essential libclang-dev
 
 # Deps-only
 COPY Cargo.toml Cargo.lock ./
@@ -12,10 +12,8 @@ RUN cargo build
 COPY . .
 RUN cargo build
 
-FROM alpine
+FROM debian:bookworm-slim
 WORKDIR /amallgam
-
-RUN apk update && apk add ca-certificates
 
 COPY --from=builder /usr/src/amallgam/target/debug/amallgam /usr/local/bin/amallgam
 

@@ -23,7 +23,7 @@ mod activities;
 mod context;
 mod objects;
 
-use self::context::AmallgamContext;
+use self::context::{AmallgamContext, ArcAmallgamContext};
 
 type Result<T> = std::result::Result<T, AppError>;
 
@@ -56,7 +56,8 @@ pub async fn create_router(config: Config) -> anyhow::Result<Router> {
         .build()
         .await?;
 
-    let router = Router::new();
+    let router = Router::new()
+        .route("/_internal/run_pending_notes", post(routes::run_pending_notes));
     let router = routes::user::configure_router(router);
     let router = routes::well_known::configure_router(router);
 
@@ -66,7 +67,33 @@ pub async fn create_router(config: Config) -> anyhow::Result<Router> {
 }
 
 mod routes {
+    use activitypub_federation::activity_sending::SendActivityTask;
+
     use super::*;
+
+    #[axum::debug_handler]
+    pub(super) async fn run_pending_notes(ctx: Data<ArcAmallgamContext>) -> Result<()> {
+        while let Ok(pending) = ctx.pending_notes.try_write()?.try_recv() {
+            let bot_user = pending
+                .activity
+                .actor
+                .dereference_local(&ctx)
+                .await
+                .expect("Missing bot user?");
+
+            let msg = WithContext::new_default(pending.activity);
+
+            let sends =
+                SendActivityTask::prepare(&msg, &bot_user, pending.target_inboxes.clone(), &ctx)
+                    .await?;
+
+            for send in sends {
+                send.sign_and_send(&ctx).await?;
+            }
+        }
+
+        Ok(())
+    }
 
     pub mod user {
         use activitypub_federation::{axum::inbox::ActivityData, axum::inbox::receive_activity};
@@ -84,7 +111,7 @@ mod routes {
         #[axum::debug_handler]
         async fn get_user_by_userid(
             Path(user_id): Path<String>,
-            ctx: Data<AmallgamContext>,
+            ctx: Data<ArcAmallgamContext>,
         ) -> Result<FederationJson<WithContext<ProtocolUser>>> {
             let user = ctx
                 .get_bot_user_by_userid(&user_id)
@@ -98,7 +125,7 @@ mod routes {
 
         #[axum::debug_handler]
         async fn handle_user_inbox(
-            ctx: Data<AmallgamContext>,
+            ctx: Data<ArcAmallgamContext>,
             activity: ActivityData,
         ) -> Result<()> {
             Ok(receive_activity::<UserAllowedActivities, User, _>(activity, &ctx).await?)
@@ -124,7 +151,7 @@ mod routes {
 
         async fn webfinger(
             Query(query): Query<WebfingerQuery>,
-            ctx: Data<AmallgamContext>,
+            ctx: Data<ArcAmallgamContext>,
         ) -> Result<Json<Webfinger>> {
             log::info!("WebFinger for {}", query.resource);
             let user_id = extract_webfinger_name(&query.resource, &ctx)?;

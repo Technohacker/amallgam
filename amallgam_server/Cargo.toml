@@ -9,6 +9,7 @@ anyhow = "1.0"
 axum = { version = "0.7", features = ["macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 enum_delegate = "0.2"
+llama_cpp = { version = "0.3", features = [] }
 log = "0.4"
 moka = { version = "0.12", features = ["future"] }
 reqwest-middleware = "0.3"
@@ -21,3 +22,9 @@ tower-http = {version = "0.6", features = ["trace"] }
 url = "2.5"
 sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "sqlite" ] }
 uuid = { version = "1.15", features = ["v4", "v7", "serde"] }
+
+[profile.dev.package.llama_cpp]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
