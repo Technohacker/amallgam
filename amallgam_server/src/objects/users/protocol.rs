@@ -53,7 +53,12 @@ impl Object for User {
 
         if object_id.is_local(ctx) {
             // Local, grab the user ID
-            let Some((_, user_id)) = object_id.inner().path().trim_end_matches('/').rsplit_once("/") else {
+            let Some((_, user_id)) = object_id
+                .inner()
+                .path()
+                .trim_end_matches('/')
+                .rsplit_once("/")
+            else {
                 return Err(anyhow::format_err!("Bad Local User URL?"));
             };
 
@@ -65,23 +70,30 @@ impl Object for User {
     }
 
     async fn into_json(self, _ctx: &Data<Self::DataType>) -> Result<Self::Kind, Self::Error> {
-        match &self {
+        let public_key = self.public_key();
+
+        match self {
             User::Local {
                 base_url,
                 user_id,
                 display_name,
                 ..
-            } => Ok(ProtocolUser {
-                id: base_url.clone().into(),
-                kind: PersonType::Person,
-                preferred_username: user_id.clone(),
-                name: display_name.clone(),
-                inbox: base_url.join("./inbox").expect("Bad Inbox URL?"),
-                outbox: base_url.join("./outbox").expect("Bad Inbox URL?"),
-                public_key: self.public_key(),
-                endpoints: None,
-            }),
-            User::Remote(protocol_user) => Ok(*protocol_user.clone()),
+            } => {
+                let inbox = base_url.join("./inbox").expect("Bad Inbox URL?");
+                let outbox = base_url.join("./outbox").expect("Bad Inbox URL?");
+
+                Ok(ProtocolUser {
+                    id: base_url.into(),
+                    kind: PersonType::Person,
+                    preferred_username: user_id,
+                    name: display_name,
+                    inbox,
+                    outbox,
+                    public_key,
+                    endpoints: None,
+                })
+            }
+            User::Remote(protocol_user) => Ok(protocol_user),
         }
     }
 
@@ -97,7 +109,7 @@ impl Object for User {
 
     async fn from_json(json: Self::Kind, ctx: &Data<Self::DataType>) -> Result<Self, Self::Error> {
         // Only called for remote users
-        let user = Self::Remote(Box::new(json));
+        let user = Self::Remote(json);
 
         ctx.upsert_user(user.clone()).await?;
 

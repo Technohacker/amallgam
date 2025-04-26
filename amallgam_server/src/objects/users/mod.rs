@@ -22,6 +22,7 @@ pub use protocol::ProtocolUser;
 
 /// User data
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum User {
     Local {
         base_url: Url,
@@ -33,8 +34,9 @@ pub enum User {
         private_key_pem: String,
 
         model_name: String,
+        system_prompt: String,
     },
-    Remote(Box<ProtocolUser>),
+    Remote(ProtocolUser),
 }
 
 impl AmallgamContext {
@@ -42,7 +44,7 @@ impl AmallgamContext {
         self.server_relative_url(&format!("./user/{user_id}/"))
     }
 
-    pub fn new_bot_user(&self, user_id: &str, model_name: impl Into<String>) -> User {
+    pub fn new_bot_user(&self, user_id: &str, model_name: impl Into<String>, system_prompt: impl Into<String>) -> User {
         let kp = http_signatures::generate_actor_keypair().expect("Failed to generate KeyPair?");
 
         User::Local {
@@ -55,6 +57,7 @@ impl AmallgamContext {
             private_key_pem: kp.private_key,
 
             model_name: model_name.into(),
+            system_prompt: system_prompt.into(),
         }
     }
 }

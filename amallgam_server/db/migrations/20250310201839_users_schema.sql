@@ -12,8 +12,8 @@ CREATE TABLE bot_users(
     public_key VARCHAR(1024) NOT NULL,
 
     -- Model Name
-    model_name VARCHAR(1024) NOT NULL
+    model_name VARCHAR(1024) NOT NULL,
 
-    -- Inference Parameters ID
-    -- inference_params_id INTEGER NOT NULL,
+    -- System Prompt
+    system_prompt VARCHAR(1024) NOT NULL
 );

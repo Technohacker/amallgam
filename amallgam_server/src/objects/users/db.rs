@@ -12,7 +12,7 @@ impl AmallgamContext {
                 self.remote_user_cache
                     .insert(
                         protocol_user.id.inner().clone(),
-                        *protocol_user,
+                        protocol_user,
                     )
                     .await;
             }
@@ -23,6 +23,7 @@ impl AmallgamContext {
                 public_key_pem,
                 private_key_pem,
                 model_name,
+                system_prompt,
             } => {
                 // Local users are persisted
 
@@ -33,18 +34,21 @@ impl AmallgamContext {
                         display_name,
                         private_key,
                         public_key,
-                        model_name
+                        model_name,
+                        system_prompt
                     ) VALUES (
                         $1,
                         $2,
                         $3,
                         $4,
-                        $5
+                        $5,
+                        $6
                     ) ON CONFLICT DO UPDATE SET
                         display_name = $2,
                         private_key = $3,
                         public_key = $4,
-                        model_name = $5
+                        model_name = $5,
+                        system_prompt = $6
                     ",
                 )
                 .bind(user_id)
@@ -52,6 +56,7 @@ impl AmallgamContext {
                 .bind(private_key_pem)
                 .bind(public_key_pem)
                 .bind(model_name)
+                .bind(system_prompt)
                 .execute(&self.db_connection)
                 .await?;
             }
@@ -68,7 +73,8 @@ impl AmallgamContext {
                 display_name,
                 public_key,
                 private_key,
-                model_name
+                model_name,
+                system_prompt
             FROM bot_users
             WHERE user_id = $1
             ",
@@ -91,6 +97,7 @@ impl AmallgamContext {
             public_key_pem: row.get("public_key"),
             private_key_pem: row.get("private_key"),
             model_name: row.get("model_name"),
+            system_prompt: row.get("system_prompt"),
         }
     }
 }
