@@ -4,7 +4,7 @@ use anyhow::Result;
 use llama_cpp::{LlamaModel, LlamaParams, LlamaSession, SessionParams};
 use moka::future::Cache;
 use reqwest_middleware::reqwest::Client;
-use sqlx::SqlitePool;
+use sqlx::{ConnectOptions, SqlitePool, sqlite::SqliteConnectOptions};
 use tokio::sync::{RwLock, mpsc};
 use url::Url;
 
@@ -23,7 +23,7 @@ pub struct AmallgamConfig {
     pub domain_name: String,
 
     /// URL to database
-    pub db_url: String,
+    pub db_url: Url,
 
     /// Path to models
     pub models_folder: PathBuf,
@@ -50,7 +50,10 @@ impl AmallgamContext {
     pub async fn new(config: AmallgamConfig) -> Result<ArcAmallgamContext> {
         let server_base_url =
             Url::parse(&format!("https://{}", &config.domain_name)).expect("Bad Server Base URL?");
-        let db_connection = SqlitePool::connect(&config.db_url).await?;
+        let db_connection = SqlitePool::connect_with(
+            SqliteConnectOptions::from_url(&config.db_url)?.create_if_missing(true),
+        )
+        .await?;
 
         let (note_sender, pending_notes) = mpsc::channel(1024);
 
@@ -83,7 +86,7 @@ impl AmallgamContext {
         let user = ctx.new_bot_user(
             "def",
             "qwen1.5-0.5b-chat-q4_k_m.gguf",
-            "You are a helpful AI assistant. The following is a Mastodon Toot from a user. Write a reply Toot."
+            "You are a helpful AI assistant. The following is a tweet from a user. Write a reply tweet."
         );
         ctx.upsert_user(user).await.unwrap();
 
@@ -160,11 +163,9 @@ impl AmallgamContext {
             })?;
 
         let sender_name = sender_name.as_ref();
-        let mut prompt = session.model().tokenize_bytes(
-            message.as_ref(),
-            false,
-            false,
-        )?;
+        let mut prompt = session
+            .model()
+            .tokenize_bytes(message.as_ref(), false, false)?;
         prompt.extend_from_slice(&session.model().tokenize_bytes(
             "<|im_end|>\n<|im_start|>assistant\n",
             false,

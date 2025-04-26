@@ -64,8 +64,11 @@ impl Object for User {
 
             ctx.get_bot_user_by_userid(user_id).await
         } else {
-            // TODO: Use local cache
-            Ok(None)
+            Ok(ctx
+                .remote_user_cache
+                .get(object_id.inner())
+                .await
+                .map(User::Remote))
         }
     }
 

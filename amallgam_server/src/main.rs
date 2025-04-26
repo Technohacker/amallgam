@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
 
     // TODO: Move these to a config file
     let config = amallgam::AmallgamConfig {
-        db_url: "sqlite::memory:".to_string(),
+        db_url: "sqlite:///amallgam/data/data.db".parse()?,
         domain_name: "amallgam.docker".to_string(),
         models_folder: "/amallgam/models".into()
     };

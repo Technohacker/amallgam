@@ -9,6 +9,7 @@ services:
     environment:
       RUST_LOG: info,activitypub_federation=debug,tower_http=trace
     volumes:
+      - "./volumes/amallgam/data:/amallgam/data:Z"
       - "./extra/amallgam/ssl:/amallgam/ssl:z"
       - "./extra/amallgam/models:/amallgam/models:z"
       - "./extra/mastodon_ssl/cert.crt:/usr/local/share/ca-certificates/mastodon_cert.crt:z"
