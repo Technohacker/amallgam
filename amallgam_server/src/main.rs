@@ -18,9 +18,10 @@ async fn main() -> Result<()> {
         .expect("Couldn't install crypto provider");
 
     // TODO: Move these to a config file
-    let config = amallgam::Config {
+    let config = amallgam::AmallgamConfig {
         db_url: "sqlite::memory:".to_string(),
         domain_name: "amallgam.docker".to_string(),
+        models_folder: "/amallgam/models".into()
     };
     let port = 443;
     log::info!("AmaLLgaM getting ready on host {}", &config.domain_name);

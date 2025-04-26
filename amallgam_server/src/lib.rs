@@ -17,25 +17,17 @@ use axum::{
 use reqwest_middleware::reqwest::{Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
-use url::Url;
 
 mod activities;
 mod context;
 mod objects;
 
 use self::context::{AmallgamContext, ArcAmallgamContext};
+pub use self::context::AmallgamConfig;
 
 type Result<T> = std::result::Result<T, AppError>;
 
-pub struct Config {
-    /// Domain name to listen for federation requests on
-    pub domain_name: String,
-
-    /// URL to database
-    pub db_url: String,
-}
-
-pub async fn create_router(config: Config) -> anyhow::Result<Router> {
+pub async fn create_router(config: AmallgamConfig) -> anyhow::Result<Router> {
     let timeout = Duration::from_secs(10);
     let http_client = Client::builder()
         .danger_accept_invalid_certs(true)
@@ -45,14 +37,11 @@ pub async fn create_router(config: Config) -> anyhow::Result<Router> {
         .build()
         .expect("Couldn't construct reqwest Client?");
 
-    let server_base_url =
-        Url::parse(&format!("https://{}", &config.domain_name)).expect("Bad Server Base URL?");
-
     let fed_config = FederationConfig::builder()
         .client(http_client.into())
         .debug(true)
-        .domain(config.domain_name)
-        .app_data(AmallgamContext::new(server_base_url, &config.db_url).await?)
+        .domain(&config.domain_name)
+        .app_data(AmallgamContext::new(config).await?)
         .build()
         .await?;
 

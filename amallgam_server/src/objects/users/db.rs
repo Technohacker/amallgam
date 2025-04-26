@@ -17,11 +17,12 @@ impl AmallgamContext {
                     .await;
             }
             User::Local {
+                base_url: _,
                 user_id,
                 display_name,
                 public_key_pem,
                 private_key_pem,
-                ..
+                model_name,
             } => {
                 // Local users are persisted
 
@@ -31,23 +32,27 @@ impl AmallgamContext {
                         user_id,
                         display_name,
                         private_key,
-                        public_key
+                        public_key,
+                        model_name
                     ) VALUES (
                         $1,
                         $2,
                         $3,
-                        $4
+                        $4,
+                        $5
                     ) ON CONFLICT DO UPDATE SET
                         display_name = $2,
                         private_key = $3,
-                        public_key = $4
+                        public_key = $4,
+                        model_name = $5
                     ",
                 )
                 .bind(user_id)
                 .bind(display_name)
                 .bind(private_key_pem)
                 .bind(public_key_pem)
-                .execute(self.db_connection())
+                .bind(model_name)
+                .execute(&self.db_connection)
                 .await?;
             }
         }
@@ -62,14 +67,15 @@ impl AmallgamContext {
                 user_id,
                 display_name,
                 public_key,
-                private_key
+                private_key,
+                model_name
             FROM bot_users
             WHERE user_id = $1
             ",
         )
         .bind(user_id)
         .map(|x| self.bot_user_from_row(x))
-        .fetch_optional(self.db_connection())
+        .fetch_optional(&self.db_connection)
         .await?;
 
         Ok(row)
@@ -84,6 +90,7 @@ impl AmallgamContext {
             display_name: row.get("display_name"),
             public_key_pem: row.get("public_key"),
             private_key_pem: row.get("private_key"),
+            model_name: row.get("model_name"),
         }
     }
 }

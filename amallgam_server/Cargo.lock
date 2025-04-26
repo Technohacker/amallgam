@@ -249,6 +249,7 @@ dependencies = [
  "llama_cpp",
  "log",
  "moka",
+ "num_cpus",
  "reqwest-middleware",
  "rustls",
  "serde",

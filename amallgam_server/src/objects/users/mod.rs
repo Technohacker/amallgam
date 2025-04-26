@@ -31,6 +31,8 @@ pub enum User {
 
         public_key_pem: String,
         private_key_pem: String,
+
+        model_name: String,
     },
     Remote(Box<ProtocolUser>),
 }
@@ -40,7 +42,7 @@ impl AmallgamContext {
         self.server_relative_url(&format!("./user/{user_id}/"))
     }
 
-    pub fn new_bot_user(&self, user_id: &str) -> User {
+    pub fn new_bot_user(&self, user_id: &str, model_name: impl Into<String>) -> User {
         let kp = http_signatures::generate_actor_keypair().expect("Failed to generate KeyPair?");
 
         User::Local {
@@ -51,6 +53,17 @@ impl AmallgamContext {
 
             public_key_pem: kp.public_key,
             private_key_pem: kp.private_key,
+
+            model_name: model_name.into(),
+        }
+    }
+}
+
+impl User {
+    pub fn display_name(&self) -> &str {
+        match self {
+            User::Local { display_name, .. } => display_name,
+            User::Remote(protocol_user) => &protocol_user.name,
         }
     }
 }
@@ -127,7 +140,8 @@ impl ActivityHandler for Create<Note> {
         log::info!("Note Received: {}", note_id);
 
         let sender_id = &self.object.attributed_to;
-        let target_inboxes = vec![sender_id.dereference(ctx).await?.shared_inbox_or_inbox()];
+        let sender = sender_id.dereference(ctx).await?;
+        let target_inboxes = vec![sender.shared_inbox_or_inbox()];
 
         let mentioned_bots = self.object.tag.iter().filter(|x| x.href.is_local(ctx));
 
@@ -135,28 +149,23 @@ impl ActivityHandler for Create<Note> {
             let bot_id = mention.href.clone();
             log::info!("\tBot Mentioned: {}", &bot_id);
 
+            let Ok(bot) = bot_id.dereference_local(ctx).await else {
+                log::warn!("\tBot Missing: {}", &bot_id);
+                continue;
+            };
+
             let arc_ctx = ctx.app_data().clone();
 
             let note_id = note_id.clone();
+
             let sender_id = sender_id.clone();
+            let sender_name = sender.display_name().to_string();
             let target_inboxes = target_inboxes.clone();
+
             let message = self.object.content.clone();
 
             ctx.queue_up_pending_note(async move {
-                let mut llama_ctx = arc_ctx.llama_context.write().await;
-                let reset_toks = llama_ctx.context_size();
-
-                llama_ctx
-                    .advance_context_async(message + "\n\nAssistant: ").await?;
-
-                let message = llama_ctx
-                    .start_completing()?
-                    .into_strings()
-                    .take(1024)
-                    .reduce(|msg, next| msg + &next)
-                    .unwrap_or_default();
-
-                llama_ctx.truncate_context(reset_toks)?;
+                let completion = arc_ctx.run_llm_inference(&bot, sender_name, message).await?;
 
                 Ok(PendingActivity {
                     activity: arc_ctx.new_create_activity(
@@ -167,7 +176,7 @@ impl ActivityHandler for Create<Note> {
                             bot_id.clone(),
                             vec![public()],
                             vec![sender_id.inner().clone()],
-                            message,
+                            completion,
                             Some(note_id),
                             [Mention::for_user(sender_id.clone())],
                         ),
