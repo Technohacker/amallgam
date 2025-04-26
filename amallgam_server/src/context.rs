@@ -5,7 +5,10 @@ use llama_cpp::{LlamaModel, LlamaParams, LlamaSession, SessionParams};
 use moka::future::Cache;
 use reqwest_middleware::reqwest::Client;
 use sqlx::{ConnectOptions, SqlitePool, sqlite::SqliteConnectOptions};
-use tokio::sync::{RwLock, mpsc};
+use tokio::{
+    sync::{mpsc, Mutex, RwLock},
+    task::JoinSet,
+};
 use url::Url;
 
 use crate::{
@@ -27,6 +30,11 @@ pub struct AmallgamConfig {
 
     /// Path to models
     pub models_folder: PathBuf,
+
+    /// Maximum number of LLM sessions that can run simultaneously
+    pub max_simultaneous_sessions: usize,
+    /// Number of CPU cores assigned for each session
+    pub num_cores_per_session: u32,
 }
 
 pub struct AmallgamContext {
@@ -39,6 +47,7 @@ pub struct AmallgamContext {
 
     llama_models: Cache<PathBuf, LlamaModel>,
     llama_sessions: Cache<String, LlamaSession>,
+    active_sessions_pool: Mutex<JoinSet<()>>,
 
     // For pending notes
     loopback_client: Client,
@@ -70,6 +79,7 @@ impl AmallgamContext {
             llama_sessions: Cache::builder()
                 .time_to_idle(Duration::from_secs(5 * 60))
                 .build(),
+            active_sessions_pool: Mutex::new(JoinSet::new()),
 
             loopback_client: Client::builder()
                 .danger_accept_invalid_certs(true)
@@ -102,7 +112,7 @@ impl AmallgamContext {
     pub(crate) async fn run_llm_inference(
         &self,
         bot_user: &User,
-        sender_name: impl AsRef<str>,
+        // sender_name: impl AsRef<str>,
         message: impl AsRef<str>,
     ) -> Result<String> {
         let User::Local {
@@ -136,7 +146,7 @@ impl AmallgamContext {
                     .await?;
 
                 let mut session = model.create_session(SessionParams {
-                    n_threads: num_cpus::get().min(u32::MAX as usize) as u32,
+                    n_threads: self.config.num_cores_per_session,
                     ..Default::default()
                 })?;
 
@@ -162,26 +172,22 @@ impl AmallgamContext {
                 anyhow::format_err!("Error occured when preparing LLM Session: {err}")
             })?;
 
-        let sender_name = sender_name.as_ref();
+        // let sender_name = sender_name.as_ref();
         let mut prompt = session
             .model()
             .tokenize_bytes(message.as_ref(), false, false)?;
+
         prompt.extend_from_slice(&session.model().tokenize_bytes(
             "<|im_end|>\n<|im_start|>assistant\n",
             false,
             true,
         )?);
-
         session.advance_context_with_tokens_async(prompt).await?;
 
-        // log::info!("Generating response...");
-        let resp = session.start_completing()?.into_string_async().await;
-        // log::info!("Response generated: {resp}");
-
-        Ok(resp)
+        Ok(session.start_completing()?.into_string_async().await)
     }
 
-    pub(crate) fn queue_up_pending_note(
+    pub(crate) async fn queue_up_pending_note(
         &self,
         future: impl Future<Output = Result<PendingActivity<Create<Note>>>> + Send + 'static,
     ) {
@@ -189,7 +195,26 @@ impl AmallgamContext {
         let loopback_url = self.server_relative_url("./_internal/run_pending_notes");
         let client = self.loopback_client.clone();
 
-        tokio::spawn(async move {
+        // Check if we're above the number of active sessions
+        let mut pool_lock = loop {
+            // First get a lock on the pool
+            log::info!("Checking for free session...");
+            let mut pool_lock = self.active_sessions_pool.lock().await;
+
+            // Check how many active sessions are going on
+            if pool_lock.len() < self.config.max_simultaneous_sessions {
+                // If we've got free space, use the lock in the outside code
+                break pool_lock;
+            } else {
+                // If not, wait for a session to be done
+                // This will keep the mutex locked, forcing future requests to be held up by the pool lock above
+                log::info!("Free session not available. Waiting...");
+                pool_lock.join_next().await;
+            }
+        };
+
+        log::info!("Free session available");
+        pool_lock.spawn(async move {
             let res = async {
                 let activity = future.await?;
                 sender.send(activity).await?;

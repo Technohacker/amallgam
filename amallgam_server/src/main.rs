@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
@@ -17,11 +17,25 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Couldn't install crypto provider");
 
+    macro_rules! get_env_with_err {
+        ($var_name:literal) => {
+            std::env::var($var_name).map_err(|_| anyhow::format_err!(concat!($var_name, " not found in environment")))
+        };
+    }
+
+    let amallgam_root: PathBuf = get_env_with_err!("AMALLGAM_ROOT")?.parse()?;
+    let domain_name = get_env_with_err!("AMALLGAM_DOMAIN")?;
+    let max_simultaneous_sessions: usize =
+        get_env_with_err!("AMALLGAM_MAX_SIMULTANEOUS_SESSIONS")?.parse()?;
+    let num_cores_per_session: u32 = get_env_with_err!("AMALLGAM_NUM_CORES_PER_SESSION")?.parse()?;
+
     // TODO: Move these to a config file
     let config = amallgam::AmallgamConfig {
-        db_url: "sqlite:///amallgam/data/data.db".parse()?,
-        domain_name: "amallgam.docker".to_string(),
-        models_folder: "/amallgam/models".into()
+        db_url: format!("sqlite://{}/data/data.db", amallgam_root.display()).parse()?,
+        domain_name,
+        models_folder: amallgam_root.join("models"),
+        max_simultaneous_sessions,
+        num_cores_per_session,
     };
     let port = 443;
     log::info!("AmaLLgaM getting ready on host {}", &config.domain_name);
@@ -30,7 +44,11 @@ async fn main() -> Result<()> {
     let router = amallgam::create_router(config).await?;
 
     // And TLS
-    let tls_config = RustlsConfig::from_pem_file("ssl/cert.pem", "ssl/key.pem").await?;
+    let tls_config = RustlsConfig::from_pem_file(
+        amallgam_root.join("ssl/cert.pem"),
+        amallgam_root.join("ssl/key.pem"),
+    )
+    .await?;
 
     // Also the Graceful shutdown signal
     let handle = axum_server::Handle::new();

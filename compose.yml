@@ -8,6 +8,10 @@ services:
           path: ./amallgam_server
     environment:
       RUST_LOG: info,activitypub_federation=debug,tower_http=trace
+      AMALLGAM_ROOT: "/amallgam"
+      AMALLGAM_DOMAIN: "amallgam.docker"
+      AMALLGAM_MAX_SIMULTANEOUS_SESSIONS: "2"
+      AMALLGAM_NUM_CORES_PER_SESSION: "2"
     volumes:
       - "./volumes/amallgam/data:/amallgam/data:Z"
       - "./extra/amallgam/ssl:/amallgam/ssl:z"

@@ -162,13 +162,12 @@ impl ActivityHandler for Create<Note> {
             let note_id = note_id.clone();
 
             let sender_id = sender_id.clone();
-            let sender_name = sender.display_name().to_string();
             let target_inboxes = target_inboxes.clone();
 
             let message = self.object.content.clone();
 
             ctx.queue_up_pending_note(async move {
-                let completion = arc_ctx.run_llm_inference(&bot, sender_name, message).await?;
+                let completion = arc_ctx.run_llm_inference(&bot, message).await?;
 
                 Ok(PendingActivity {
                     activity: arc_ctx.new_create_activity(
@@ -186,7 +185,7 @@ impl ActivityHandler for Create<Note> {
                     ),
                     target_inboxes,
                 })
-            });
+            }).await;
         }
 
         Ok(())
