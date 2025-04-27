@@ -1,0 +1,13 @@
+services:
+  amallgam_base:
+    build: amallgam_server
+    develop:
+      watch:
+        - action: rebuild
+          path: ./amallgam_server
+    environment:
+      RUST_LOG: info,activitypub_federation=debug,tower_http=trace
+      AMALLGAM_ROOT: "/amallgam"
+    volumes:
+      - "./extra/amallgam/models:/amallgam/models:z"
+      - "./extra/ssl/ca/cert.pem:/etc/ssl/certs/ca.pem:z"
