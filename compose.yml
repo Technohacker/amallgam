@@ -1,6 +1,6 @@
 services:
   # AmaLLgaM and friends
-  amallgam:
+  amallgam_1:
     build: amallgam_server
     develop:
       watch:
@@ -10,7 +10,7 @@ services:
       RUST_LOG: info,activitypub_federation=debug,tower_http=trace
       AMALLGAM_ROOT: "/amallgam"
       AMALLGAM_DOMAIN: "amallgam_1.docker"
-      AMALLGAM_MAX_SIMULTANEOUS_SESSIONS: "2"
+      AMALLGAM_MAX_SIMULTANEOUS_SESSIONS: "1"
       AMALLGAM_NUM_CORES_PER_SESSION: "2"
     volumes:
       - "./volumes/amallgam_1/data:/amallgam/data:Z"
@@ -21,6 +21,28 @@ services:
       default:
         aliases:
           - amallgam_1.docker
+
+  amallgam_2:
+    build: amallgam_server
+    develop:
+      watch:
+        - action: rebuild
+          path: ./amallgam_server
+    environment:
+      RUST_LOG: info,activitypub_federation=debug,tower_http=trace
+      AMALLGAM_ROOT: "/amallgam"
+      AMALLGAM_DOMAIN: "amallgam_2.docker"
+      AMALLGAM_MAX_SIMULTANEOUS_SESSIONS: "1"
+      AMALLGAM_NUM_CORES_PER_SESSION: "2"
+    volumes:
+      - "./volumes/amallgam_2/data:/amallgam/data:Z"
+      - "./extra/amallgam/models:/amallgam/models:z"
+      - "./extra/ssl/amallgam_2:/amallgam/ssl:z"
+      - "./extra/ssl/ca/cert.pem:/etc/ssl/certs/ca.pem:z"
+    networks:
+      default:
+        aliases:
+          - amallgam_2.docker
 
   # Mastodon and friends
   mastodon:
