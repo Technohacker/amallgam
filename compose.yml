@@ -9,18 +9,18 @@ services:
     environment:
       RUST_LOG: info,activitypub_federation=debug,tower_http=trace
       AMALLGAM_ROOT: "/amallgam"
-      AMALLGAM_DOMAIN: "amallgam.docker"
+      AMALLGAM_DOMAIN: "amallgam_1.docker"
       AMALLGAM_MAX_SIMULTANEOUS_SESSIONS: "2"
       AMALLGAM_NUM_CORES_PER_SESSION: "2"
     volumes:
-      - "./volumes/amallgam/data:/amallgam/data:Z"
-      - "./extra/amallgam/ssl:/amallgam/ssl:z"
+      - "./volumes/amallgam_1/data:/amallgam/data:Z"
       - "./extra/amallgam/models:/amallgam/models:z"
-      - "./extra/mastodon_ssl/cert.crt:/usr/local/share/ca-certificates/mastodon_cert.crt:z"
+      - "./extra/ssl/amallgam_1:/amallgam/ssl:z"
+      - "./extra/ssl/ca/cert.pem:/etc/ssl/certs/ca.pem:z"
     networks:
       default:
         aliases:
-          - amallgam.docker
+          - amallgam_1.docker
 
   # Mastodon and friends
   mastodon:
@@ -48,8 +48,8 @@ services:
       ALLOWED_PRIVATE_ADDRESSES: "172.0.0.1/8"
     volumes:
       - "./volumes/mastodon/config:/config:Z"
-      - "./extra/mastodon_ssl:/config/keys:z"
-      - "./extra/amallgam/ssl/cert.pem:/usr/local/share/ca-certificates/amallgam_cert.crt:z"
+      - "./extra/ssl/mastodon:/config/keys:z"
+      - "./extra/ssl/ca/cert.pem:/etc/ssl/certs/ca.pem:z"
     networks:
       default:
         aliases:

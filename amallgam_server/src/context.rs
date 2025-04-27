@@ -51,7 +51,7 @@ pub struct AmallgamContext {
 
     // For pending notes
     loopback_client: Client,
-    pub(crate) note_sender: mpsc::Sender<PendingActivity<Create<Note>>>,
+    note_sender: mpsc::Sender<PendingActivity<Create<Note>>>,
     pub(crate) pending_notes: RwLock<mpsc::Receiver<PendingActivity<Create<Note>>>>,
 }
 
@@ -81,9 +81,7 @@ impl AmallgamContext {
                 .build(),
             active_sessions_pool: Mutex::new(JoinSet::new()),
 
-            loopback_client: Client::builder()
-                .danger_accept_invalid_certs(true)
-                .build()?,
+            loopback_client: Client::new(),
             note_sender,
             pending_notes: RwLock::new(pending_notes),
         };

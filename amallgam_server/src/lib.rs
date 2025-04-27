@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use activitypub_federation::{
     axum::json::FederationJson,
     config::{Data, FederationConfig, FederationMiddleware},
@@ -14,7 +12,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use reqwest_middleware::reqwest::{Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
@@ -28,17 +25,7 @@ pub use self::context::AmallgamConfig;
 type Result<T> = std::result::Result<T, AppError>;
 
 pub async fn create_router(config: AmallgamConfig) -> anyhow::Result<Router> {
-    let timeout = Duration::from_secs(10);
-    let http_client = Client::builder()
-        .danger_accept_invalid_certs(true)
-        .redirect(Policy::none())
-        .timeout(timeout)
-        .connect_timeout(timeout)
-        .build()
-        .expect("Couldn't construct reqwest Client?");
-
     let fed_config = FederationConfig::builder()
-        .client(http_client.into())
         .debug(true)
         .domain(&config.domain_name)
         .app_data(AmallgamContext::new(config).await?)

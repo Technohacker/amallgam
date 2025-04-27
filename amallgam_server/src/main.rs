@@ -13,13 +13,19 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
+    // Regenerate CA Certs
+    std::process::Command::new("update-ca-certificates")
+        .output()
+        .expect("Failed to update CA Certificates");
+
     ring::default_provider()
         .install_default()
         .expect("Couldn't install crypto provider");
 
     macro_rules! get_env_with_err {
         ($var_name:literal) => {
-            std::env::var($var_name).map_err(|_| anyhow::format_err!(concat!($var_name, " not found in environment")))
+            std::env::var($var_name)
+                .map_err(|_| anyhow::format_err!(concat!($var_name, " not found in environment")))
         };
     }
 
@@ -27,7 +33,8 @@ async fn main() -> Result<()> {
     let domain_name = get_env_with_err!("AMALLGAM_DOMAIN")?;
     let max_simultaneous_sessions: usize =
         get_env_with_err!("AMALLGAM_MAX_SIMULTANEOUS_SESSIONS")?.parse()?;
-    let num_cores_per_session: u32 = get_env_with_err!("AMALLGAM_NUM_CORES_PER_SESSION")?.parse()?;
+    let num_cores_per_session: u32 =
+        get_env_with_err!("AMALLGAM_NUM_CORES_PER_SESSION")?.parse()?;
 
     // TODO: Move these to a config file
     let config = amallgam::AmallgamConfig {
