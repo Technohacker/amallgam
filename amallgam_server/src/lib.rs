@@ -34,6 +34,7 @@ pub async fn create_router(config: AmallgamConfig) -> anyhow::Result<Router> {
 
     let router = Router::new()
         .route("/_internal/run_pending_notes", post(routes::run_pending_notes));
+    let router = routes::admin::configure_router(router);
     let router = routes::user::configure_router(router);
     let router = routes::well_known::configure_router(router);
 
@@ -69,6 +70,27 @@ mod routes {
         }
 
         Ok(())
+    }
+
+    pub mod admin {
+        use axum::routing::put;
+
+        use crate::context::ModelConfig;
+
+        use super::*;
+
+        pub fn configure_router(router: Router) -> Router {
+            router
+                .route("/admin/upsert_model_config", put(upsert_model_config))
+        }
+
+        #[axum::debug_handler]
+        async fn upsert_model_config(
+            ctx: Data<ArcAmallgamContext>,
+            Json(model_config): Json<ModelConfig>,
+        ) -> Result<()> {
+            Ok(ctx.upsert_model_config(model_config).await?)
+        }
     }
 
     pub mod user {
