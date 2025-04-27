@@ -1,6 +1,5 @@
 use activitypub_federation::{
     config::Data,
-    http_signatures,
     kinds::public,
     traits::{ActivityHandler, Actor},
 };
@@ -9,16 +8,15 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
-    activities::{PendingActivity, create::Create},
-    context::{AmallgamContext, ArcAmallgamContext},
+    activities::{create::Create, PendingActivity},
+    context::{ArcAmallgamContext, ModelId},
 };
 
 use super::notes::{Mention, Note};
 
-mod db;
 mod protocol;
 
-pub use protocol::ProtocolUser;
+pub use self::protocol::ProtocolUser;
 
 /// User data
 #[derive(Debug, Clone)]
@@ -33,33 +31,10 @@ pub enum User {
         public_key_pem: String,
         private_key_pem: String,
 
-        model_name: String,
+        model_id: ModelId,
         system_prompt: String,
     },
     Remote(ProtocolUser),
-}
-
-impl AmallgamContext {
-    fn user_base_url(&self, user_id: &str) -> Url {
-        self.server_relative_url(&format!("./user/{user_id}/"))
-    }
-
-    pub fn new_bot_user(&self, user_id: &str, model_name: impl Into<String>, system_prompt: impl Into<String>) -> User {
-        let kp = http_signatures::generate_actor_keypair().expect("Failed to generate KeyPair?");
-
-        User::Local {
-            base_url: self.user_base_url(user_id),
-
-            user_id: user_id.to_string(),
-            display_name: user_id.to_string(),
-
-            public_key_pem: kp.public_key,
-            private_key_pem: kp.private_key,
-
-            model_name: model_name.into(),
-            system_prompt: system_prompt.into(),
-        }
-    }
 }
 
 impl User {
@@ -167,6 +142,7 @@ impl ActivityHandler for Create<Note> {
             let message = self.object.content.clone();
 
             ctx.queue_up_pending_note(async move {
+                log::info!("Received Message: {message}");
                 let completion = arc_ctx.run_llm_inference(&bot, message).await?;
 
                 Ok(PendingActivity {
@@ -185,7 +161,8 @@ impl ActivityHandler for Create<Note> {
                     ),
                     target_inboxes,
                 })
-            }).await;
+            })
+            .await;
         }
 
         Ok(())

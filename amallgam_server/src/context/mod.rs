@@ -1,24 +1,27 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
-use llama_cpp::{LlamaModel, LlamaParams, LlamaSession, SessionParams};
+use llama_cpp::LlamaSession;
+use model_config::LoadedModel;
 use moka::future::Cache;
 use reqwest_middleware::reqwest::Client;
 use sqlx::{ConnectOptions, SqlitePool, sqlite::SqliteConnectOptions};
 use tokio::{
-    sync::{mpsc, Mutex, RwLock},
+    sync::{Mutex, RwLock, mpsc},
     task::JoinSet,
 };
 use url::Url;
 
 use crate::{
     activities::{PendingActivity, create::Create},
-    objects::{
-        notes::Note,
-        users::{ProtocolUser, User},
-    },
+    objects::{notes::Note, users::ProtocolUser},
 };
 
+mod llm;
+mod model_config;
+mod users;
+
+pub use model_config::{ModelConfig, ModelId};
 pub type ArcAmallgamContext = Arc<AmallgamContext>;
 
 pub struct AmallgamConfig {
@@ -45,7 +48,9 @@ pub struct AmallgamContext {
     pub(crate) remote_user_cache: Cache<Url, ProtocolUser>,
     pub(crate) db_connection: SqlitePool,
 
-    llama_models: Cache<PathBuf, LlamaModel>,
+    /// Model ID -> Model
+    llama_models: Cache<ModelId, LoadedModel>,
+    /// Bot ID -> LLM Session
     llama_sessions: Cache<String, LlamaSession>,
     active_sessions_pool: Mutex<JoinSet<()>>,
 
@@ -90,14 +95,6 @@ impl AmallgamContext {
             .run(&ctx.db_connection)
             .await?;
 
-        // TODO: Remove this temporary user
-        let user = ctx.new_bot_user(
-            "def",
-            "qwen1.5-0.5b-chat-q4_k_m.gguf",
-            "You are a helpful AI assistant. The following is a tweet from a user. Write a reply tweet."
-        );
-        ctx.upsert_user(user).await.unwrap();
-
         Ok(Arc::new(ctx))
     }
 
@@ -105,84 +102,6 @@ impl AmallgamContext {
         self.server_base_url
             .join(suffix)
             .expect("Bad Server-relative URL?")
-    }
-
-    pub(crate) async fn run_llm_inference(
-        &self,
-        bot_user: &User,
-        // sender_name: impl AsRef<str>,
-        message: impl AsRef<str>,
-    ) -> Result<String> {
-        let User::Local {
-            user_id,
-            model_name,
-            system_prompt,
-            ..
-        } = bot_user
-        else {
-            return Err(anyhow::format_err!(
-                "Attempted to use a remote user as a bot"
-            ));
-        };
-        let model_path = self.config.models_folder.join(model_name);
-
-        let mut session = self
-            .llama_sessions
-            .try_get_with_by_ref(user_id, async {
-                let model = self
-                    .llama_models
-                    .try_get_with_by_ref(
-                        &model_path,
-                        LlamaModel::load_from_file_async(
-                            &model_path,
-                            LlamaParams {
-                                n_gpu_layers: 0,
-                                ..Default::default()
-                            },
-                        ),
-                    )
-                    .await?;
-
-                let mut session = model.create_session(SessionParams {
-                    n_threads: self.config.num_cores_per_session,
-                    ..Default::default()
-                })?;
-
-                session
-                    .set_context_to_tokens_async(session.model().tokenize_bytes(
-                        format!(
-                            "<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n"
-                        ),
-                        false,
-                        true,
-                    )?)
-                    .await?;
-
-                anyhow::Ok(session)
-            })
-            .await
-            .and_then(|x| {
-                Ok(x.deep_copy().map_err(|err| {
-                    anyhow::format_err!("Error occured when cloning session: {err}")
-                })?)
-            })
-            .map_err(|err| {
-                anyhow::format_err!("Error occured when preparing LLM Session: {err}")
-            })?;
-
-        // let sender_name = sender_name.as_ref();
-        let mut prompt = session
-            .model()
-            .tokenize_bytes(message.as_ref(), false, false)?;
-
-        prompt.extend_from_slice(&session.model().tokenize_bytes(
-            "<|im_end|>\n<|im_start|>assistant\n",
-            false,
-            true,
-        )?);
-        session.advance_context_with_tokens_async(prompt).await?;
-
-        Ok(session.start_completing()?.into_string_async().await)
     }
 
     pub(crate) async fn queue_up_pending_note(
