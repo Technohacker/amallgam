@@ -30,8 +30,8 @@ impl AmallgamContext {
         sqlx::query(
             "
             INSERT INTO model_config (
-                id
-                file_name
+                id,
+                file_name,
                 prompt_template
             ) VALUES (
                 $1,
@@ -42,11 +42,13 @@ impl AmallgamContext {
                 prompt_template = $3
             ",
         )
-        .bind(model_config.id.0)
+        .bind(&model_config.id.0)
         .bind(model_config.file_name)
         .bind(model_config.prompt_template)
         .execute(&self.db_connection)
         .await?;
+
+        self.llama_models.invalidate(&model_config.id).await;
 
         Ok(())
     }

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use activitypub_federation::{
     axum::json::FederationJson,
     config::{Data, FederationConfig, FederationMiddleware},
@@ -12,6 +14,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use reqwest_middleware::reqwest::{redirect::Policy, Client};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
@@ -19,21 +22,33 @@ mod activities;
 mod context;
 mod objects;
 
-use self::context::{AmallgamContext, ArcAmallgamContext};
 pub use self::context::AmallgamConfig;
+use self::context::{AmallgamContext, ArcAmallgamContext};
 
 type Result<T> = std::result::Result<T, AppError>;
 
 pub async fn create_router(config: AmallgamConfig) -> anyhow::Result<Router> {
+    let timeout = Duration::from_secs(10);
+    let http_client = Client::builder()
+        .danger_accept_invalid_certs(true)
+        .redirect(Policy::none())
+        .timeout(timeout)
+        .connect_timeout(timeout)
+        .build()
+        .expect("Couldn't construct reqwest Client?");
+
     let fed_config = FederationConfig::builder()
+        .client(http_client.into())
         .debug(true)
         .domain(&config.domain_name)
         .app_data(AmallgamContext::new(config).await?)
         .build()
         .await?;
 
-    let router = Router::new()
-        .route("/_internal/run_pending_notes", post(routes::run_pending_notes));
+    let router = Router::new().route(
+        "/_internal/run_pending_notes",
+        post(routes::run_pending_notes),
+    );
     let router = routes::admin::configure_router(router);
     let router = routes::user::configure_router(router);
     let router = routes::well_known::configure_router(router);
@@ -75,13 +90,14 @@ mod routes {
     pub mod admin {
         use axum::routing::put;
 
-        use crate::context::ModelConfig;
+        use crate::context::{ModelConfig, ModelId};
 
         use super::*;
 
         pub fn configure_router(router: Router) -> Router {
             router
                 .route("/admin/upsert_model_config", put(upsert_model_config))
+                .route("/admin/upsert_bot_config", put(upsert_bot_config))
         }
 
         #[axum::debug_handler]
@@ -90,6 +106,27 @@ mod routes {
             Json(model_config): Json<ModelConfig>,
         ) -> Result<()> {
             Ok(ctx.upsert_model_config(model_config).await?)
+        }
+
+        #[derive(Deserialize)]
+        struct BotConfig {
+            user_id: String,
+            model_id: ModelId,
+            system_prompt: String,
+        }
+
+        #[axum::debug_handler]
+        async fn upsert_bot_config(
+            ctx: Data<ArcAmallgamContext>,
+            Json(bot_config): Json<BotConfig>,
+        ) -> Result<()> {
+            Ok(ctx
+                .upsert_user(ctx.new_bot_user(
+                    &bot_config.user_id,
+                    bot_config.model_id,
+                    &bot_config.system_prompt,
+                ))
+                .await?)
         }
     }
 

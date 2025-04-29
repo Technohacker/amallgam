@@ -53,7 +53,7 @@ impl AmallgamContext {
                 sqlx::query(
                     "
                     INSERT INTO bot_users (
-                        user_id,
+                        id,
                         display_name,
                         private_key,
                         public_key,
@@ -92,14 +92,14 @@ impl AmallgamContext {
         let row = sqlx::query(
             "
             SELECT
-                user_id,
+                id,
                 display_name,
                 public_key,
                 private_key,
-                model_name,
+                model_id,
                 system_prompt
             FROM bot_users
-            WHERE user_id = $1
+            WHERE id = $1
             ",
         )
         .bind(user_id)
@@ -111,7 +111,7 @@ impl AmallgamContext {
     }
 
     fn bot_user_from_row(&self, row: SqliteRow) -> User {
-        let user_id = row.get("user_id");
+        let user_id = row.get("id");
 
         User::Local {
             base_url: self.user_base_url(user_id),

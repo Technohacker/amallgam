@@ -13,10 +13,6 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    // Regenerate CA Certs
-    std::process::Command::new("update-ca-certificates")
-        .output()
-        .expect("Failed to update CA Certificates");
 
     ring::default_provider()
         .install_default()

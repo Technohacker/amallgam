@@ -86,7 +86,10 @@ impl AmallgamContext {
                 .build(),
             active_sessions_pool: Mutex::new(JoinSet::new()),
 
-            loopback_client: Client::new(),
+            loopback_client: Client::builder()
+                .danger_accept_invalid_certs(true)
+                .build()
+                .expect("Couldn't build loopback client?"),
             note_sender,
             pending_notes: RwLock::new(pending_notes),
         };

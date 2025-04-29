@@ -13,7 +13,7 @@ llama_cpp = { version = "0.3", features = [] }
 log = "0.4"
 moka = { version = "0.12", features = ["future"] }
 minijinja = { version = "2.9", features = ["loader"] }
-reqwest-middleware = "0.3"
+reqwest-middleware = { version = "0.3", features = ["rustls-tls"] }
 rustls = "0.23"
 serde = "1.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
