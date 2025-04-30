@@ -1,7 +1,7 @@
 FROM rust:1.86-bookworm AS builder
 WORKDIR /usr/src/amallgam
 
-RUN apt-get update && apt-get install -y build-essential libclang-dev
+RUN apt-get update && apt-get install -y build-essential libclang-dev libvulkan-dev
 
 # Deps-only
 COPY Cargo.toml Cargo.lock ./
@@ -15,7 +15,9 @@ RUN cargo build
 FROM debian:bookworm-slim
 WORKDIR /amallgam
 
+RUN apt-get update && apt-get install -y mesa-vulkan-drivers vulkan-validationlayers
+
 COPY --from=builder /usr/src/amallgam/target/debug/amallgam /usr/local/bin/amallgam
 
 ENV RUST_LOG info
-CMD ["amallgam"]
+CMD ["/bin/bash", "-c", "update-ca-certificates && amallgam"]
