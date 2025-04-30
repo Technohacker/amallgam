@@ -14,7 +14,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use reqwest_middleware::reqwest::{redirect::Policy, Client};
+use reqwest_middleware::reqwest::{Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
@@ -98,6 +98,7 @@ mod routes {
             router
                 .route("/admin/upsert_model_config", put(upsert_model_config))
                 .route("/admin/upsert_bot_config", put(upsert_bot_config))
+                .route("/admin/add_bot_alias", put(add_bot_alias))
         }
 
         #[axum::debug_handler]
@@ -126,6 +127,22 @@ mod routes {
                     bot_config.model_id,
                     &bot_config.system_prompt,
                 ))
+                .await?)
+        }
+
+        #[derive(Deserialize)]
+        struct BotAlias {
+            user_id: String,
+            alias_id: String,
+        }
+
+        #[axum::debug_handler]
+        async fn add_bot_alias(
+            ctx: Data<ArcAmallgamContext>,
+            Json(bot_alias): Json<BotAlias>,
+        ) -> Result<()> {
+            Ok(ctx
+                .add_bot_alias(&bot_alias.user_id, &bot_alias.alias_id)
                 .await?)
         }
     }

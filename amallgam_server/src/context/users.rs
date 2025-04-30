@@ -11,7 +11,12 @@ impl AmallgamContext {
         self.server_relative_url(&format!("./user/{user_id}/"))
     }
 
-    pub fn new_bot_user(&self, user_id: &str, model_id: ModelId, system_prompt: impl Into<String>) -> User {
+    pub fn new_bot_user(
+        &self,
+        user_id: &str,
+        model_id: ModelId,
+        system_prompt: impl Into<String>,
+    ) -> User {
         let kp = http_signatures::generate_actor_keypair().expect("Failed to generate KeyPair?");
 
         User::Local {
@@ -33,10 +38,7 @@ impl AmallgamContext {
             User::Remote(protocol_user) => {
                 // Remote users are kept in cache
                 self.remote_user_cache
-                    .insert(
-                        protocol_user.id.inner().clone(),
-                        protocol_user,
-                    )
+                    .insert(protocol_user.id.inner().clone(), protocol_user)
                     .await;
             }
             User::Local {
@@ -84,6 +86,26 @@ impl AmallgamContext {
                 .await?;
             }
         }
+
+        Ok(())
+    }
+
+    pub async fn add_bot_alias(&self, bot_id: &str, alias_id: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "
+            INSERT INTO bot_aliases (
+                bot_id,
+                alias_id
+            ) VALUES (
+                $1,
+                $2
+            ) ON CONFLICT DO NOTHING
+            ",
+        )
+        .bind(bot_id)
+        .bind(alias_id)
+        .execute(&self.db_connection)
+        .await?;
 
         Ok(())
     }
