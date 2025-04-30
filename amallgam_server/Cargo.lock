@@ -246,6 +246,7 @@ dependencies = [
  "axum",
  "axum-server",
  "enum_delegate",
+ "futures",
  "llama_cpp",
  "log",
  "minijinja",

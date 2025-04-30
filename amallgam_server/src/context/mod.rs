@@ -1,5 +1,8 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use activitypub_federation::{
+    activity_sending::SendActivityTask, config::Data, protocol::context::WithContext,
+};
 use anyhow::Result;
 use llama_cpp::LlamaSession;
 use model_config::LoadedModel;
@@ -108,13 +111,9 @@ impl AmallgamContext {
     }
 
     pub(crate) async fn queue_up_pending_note(
-        &self,
+        self: &Arc<Self>,
         future: impl Future<Output = Result<PendingActivity<Create<Note>>>> + Send + 'static,
     ) {
-        let sender = self.note_sender.clone();
-        let loopback_url = self.server_relative_url("./_internal/run_pending_notes");
-        let client = self.loopback_client.clone();
-
         // Check if we're above the number of active sessions
         let mut pool_lock = loop {
             // First get a lock on the pool
@@ -134,12 +133,17 @@ impl AmallgamContext {
         };
 
         log::info!("Free session available");
+
+        let ctx = self.clone();
         pool_lock.spawn(async move {
             let res = async {
                 let activity = future.await?;
-                sender.send(activity).await?;
 
-                client.post(loopback_url).send().await?;
+                let loopback_url = ctx.server_relative_url("./_internal/run_pending_notes");
+
+                ctx.note_sender.send(activity).await?;
+                ctx.loopback_client.post(loopback_url).send().await?;
+
                 anyhow::Ok(())
             };
 
@@ -147,5 +151,32 @@ impl AmallgamContext {
                 log::warn!("Pending activity send failed! {}", err);
             }
         });
+    }
+
+    pub(crate) async fn send_pending_note_immediately(
+        data_ctx: &Data<ArcAmallgamContext>,
+        pending: PendingActivity<Create<Note>>,
+    ) -> Result<()> {
+        let bot_user = pending
+            .activity
+            .actor
+            .dereference_local(data_ctx)
+            .await
+            .expect("Missing bot user?");
+
+        let msg = WithContext::new_default(pending.activity);
+
+        let sends =
+            SendActivityTask::prepare(&msg, &bot_user, pending.target_inboxes.clone(), data_ctx)
+                .await?;
+
+        futures::future::join_all(sends.into_iter().map(|x| async move {
+            if let Err(err) = x.sign_and_send(data_ctx).await {
+                log::warn!("Failed to send an activity: {err}");
+            }
+        }))
+        .await;
+
+        Ok(())
     }
 }

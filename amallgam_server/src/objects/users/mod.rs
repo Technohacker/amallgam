@@ -1,5 +1,6 @@
 use activitypub_federation::{
     config::Data,
+    fetch::object_id::ObjectId,
     kinds::public,
     traits::{ActivityHandler, Actor},
 };
@@ -9,7 +10,7 @@ use url::Url;
 
 use crate::{
     activities::{create::Create, PendingActivity},
-    context::{ArcAmallgamContext, ModelId},
+    context::{AmallgamContext, ArcAmallgamContext, ModelId},
 };
 
 use super::notes::{Mention, Note};
@@ -114,55 +115,120 @@ impl ActivityHandler for Create<Note> {
     }
 
     async fn receive(self, ctx: &Data<Self::DataType>) -> Result<(), Self::Error> {
-        let note_id = &self.object.id;
-        log::info!("Note Received: {}", note_id);
+        let note = &self.object;
+        log::info!("Note Received: {}", &note.id);
 
-        let sender_id = &self.object.attributed_to;
-        let sender = sender_id.dereference(ctx).await?;
-        let target_inboxes = vec![sender.shared_inbox_or_inbox()];
+        let create_sender_id = &self.actor;
+        let note_sender_id = &self.object.attributed_to;
+        let note_sender = note_sender_id.dereference(ctx).await?;
 
-        let mentioned_bots = self.object.tag.iter().filter(|x| x.href.is_local(ctx));
+        // Check if this is an alias offload request
+        let offload_request = create_sender_id != note_sender_id;
 
-        for mention in mentioned_bots {
-            let bot_id = mention.href.clone();
-            log::info!("\tBot Mentioned: {}", &bot_id);
+        let mentioned_bots = if offload_request {
+            // This is an offload request, check if we have the bot
+            log::info!("Request is an alias offload for: {}", create_sender_id);
 
-            let Ok(bot) = bot_id.dereference_local(ctx).await else {
-                log::warn!("\tBot Missing: {}", &bot_id);
-                continue;
+            let Some(offload_bot) = ctx.find_bot_for_alias(create_sender_id).await? else {
+                log::info!("Offload bot not found: {}", create_sender_id);
+                return Err(anyhow::format_err!(
+                    "Offload bot not found for: {}",
+                    create_sender_id
+                ));
             };
 
+            // And only process it with the offload bot
+            vec![offload_bot]
+        } else {
+            // This is a normal request. Find the mentioned bots
+            let mut bots = vec![];
+
+            for mention in &note.tag {
+                let bot_id = &mention.href;
+
+                // Skip remote mentions
+                if !bot_id.is_local(ctx) {
+                    continue;
+                }
+                log::info!("\tBot Mentioned: {}", &bot_id);
+
+                let Ok(bot) = bot_id.dereference_local(ctx).await else {
+                    log::warn!("\tBot Missing: {}", &bot_id);
+                    continue;
+                };
+
+                bots.push(bot);
+            }
+
+            bots
+        };
+
+        for bot in mentioned_bots {
             let arc_ctx = ctx.app_data().clone();
 
-            let note_id = note_id.clone();
+            let bot_id = ObjectId::from(bot.id());
+            let note = note.clone();
 
-            let sender_id = sender_id.clone();
-            let target_inboxes = target_inboxes.clone();
+            let note_sender_id = note_sender_id.clone();
 
-            let message = self.object.content.clone();
+            if offload_request {
+                // Compute the offload response
+                let target_inboxes = vec![note_sender.shared_inbox_or_inbox()];
 
-            ctx.queue_up_pending_note(async move {
-                log::info!("Received Message: {message}");
-                let completion = arc_ctx.run_llm_inference(&bot, message).await?;
+                ctx.queue_up_pending_note(async move {
+                    let message = note.content;
+                    log::info!("Received Message: {message}");
+                    let completion = arc_ctx.run_llm_inference(&bot, message).await?;
 
-                Ok(PendingActivity {
+                    Ok(PendingActivity {
+                        activity: arc_ctx.new_create_activity(
+                            bot_id.clone(),
+                            vec![public()],
+                            vec![],
+                            arc_ctx.new_note(
+                                bot_id.clone(),
+                                vec![public()],
+                                vec![note_sender_id.inner().clone()],
+                                completion,
+                                Some(note.id),
+                                [Mention::for_user(note_sender_id.clone())],
+                            ),
+                        ),
+                        target_inboxes,
+                    })
+                })
+                .await;
+            } else {
+                // Test out offloading
+                log::info!("Offloading note: {}", &note.id);
+                let User::Local { user_id, .. } = bot else {
+                    panic!("Attempted to use remote user as a bot");
+                };
+
+                let aliases = arc_ctx.get_bot_aliases(&user_id).await?;
+                let mut target_inboxes = vec![];
+                for alias in aliases {
+                    match alias.dereference(ctx).await {
+                        Ok(alias) => {
+                            target_inboxes.push(alias.shared_inbox_or_inbox());
+                        }
+                        Err(err) => {
+                            log::info!("Offload bot not found: {} {}", &alias, err);
+                        }
+                    }
+                }
+
+                AmallgamContext::send_pending_note_immediately(ctx, PendingActivity {
                     activity: arc_ctx.new_create_activity(
                         bot_id.clone(),
                         vec![public()],
                         vec![],
-                        arc_ctx.new_note(
-                            bot_id.clone(),
-                            vec![public()],
-                            vec![sender_id.inner().clone()],
-                            completion,
-                            Some(note_id),
-                            [Mention::for_user(sender_id.clone())],
-                        ),
+                        note,
                     ),
                     target_inboxes,
                 })
-            })
-            .await;
+                .await?;
+            }
         }
 
         Ok(())

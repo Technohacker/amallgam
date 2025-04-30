@@ -1,4 +1,5 @@
-use activitypub_federation::http_signatures;
+use activitypub_federation::{fetch::object_id::ObjectId, http_signatures};
+use anyhow::Result;
 use sqlx::{Row, sqlite::SqliteRow};
 use url::Url;
 
@@ -33,7 +34,7 @@ impl AmallgamContext {
         }
     }
 
-    pub async fn upsert_user(&self, user: User) -> anyhow::Result<()> {
+    pub async fn upsert_user(&self, user: User) -> Result<()> {
         match user {
             User::Remote(protocol_user) => {
                 // Remote users are kept in cache
@@ -90,7 +91,7 @@ impl AmallgamContext {
         Ok(())
     }
 
-    pub async fn add_bot_alias(&self, bot_id: &str, alias_id: &str) -> anyhow::Result<()> {
+    pub async fn add_bot_alias(&self, bot_id: &str, alias_id: &ObjectId<User>) -> Result<()> {
         sqlx::query(
             "
             INSERT INTO bot_aliases (
@@ -103,14 +104,14 @@ impl AmallgamContext {
             ",
         )
         .bind(bot_id)
-        .bind(alias_id)
+        .bind(alias_id.inner().as_str())
         .execute(&self.db_connection)
         .await?;
 
         Ok(())
     }
 
-    pub async fn get_bot_user_by_userid(&self, user_id: &str) -> anyhow::Result<Option<User>> {
+    pub async fn get_bot_user_by_userid(&self, user_id: &str) -> Result<Option<User>> {
         let row = sqlx::query(
             "
             SELECT
@@ -130,6 +131,50 @@ impl AmallgamContext {
         .await?;
 
         Ok(row)
+    }
+
+    pub async fn get_bot_aliases(&self, user_id: &str) -> Result<Vec<ObjectId<User>>> {
+        let row = sqlx::query(
+            "
+            SELECT
+                alias_id
+            FROM bot_aliases
+            WHERE bot_id = $1
+            ",
+        )
+        .bind(user_id)
+        .try_map(|x: SqliteRow| {
+            Url::parse(&x.get::<String, _>("alias_id"))
+                .map(ObjectId::from)
+                .map_err(|x| sqlx::Error::ColumnDecode {
+                    index: "alias_id".to_string(),
+                    source: Box::new(x),
+                })
+        })
+        .fetch_all(&self.db_connection)
+        .await?;
+
+        Ok(row)
+    }
+
+    pub async fn find_bot_for_alias(&self, alias_id: &ObjectId<User>) -> Result<Option<User>> {
+        let bot_id = sqlx::query(
+            "
+            SELECT
+                bot_id
+            FROM bot_aliases
+            WHERE alias_id = $1
+            ",
+        )
+        .bind(alias_id.inner().as_str())
+        .map(|x: SqliteRow| x.get::<String, _>("bot_id"))
+        .fetch_optional(&self.db_connection)
+        .await?;
+
+        match bot_id {
+            Some(bot_id) => self.get_bot_user_by_userid(&bot_id).await,
+            None => Ok(None),
+        }
     }
 
     fn bot_user_from_row(&self, row: SqliteRow) -> User {

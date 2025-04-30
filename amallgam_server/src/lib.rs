@@ -59,28 +59,15 @@ pub async fn create_router(config: AmallgamConfig) -> anyhow::Result<Router> {
 }
 
 mod routes {
-    use activitypub_federation::activity_sending::SendActivityTask;
-
     use super::*;
 
     #[axum::debug_handler]
     pub(super) async fn run_pending_notes(ctx: Data<ArcAmallgamContext>) -> Result<()> {
         while let Ok(pending) = ctx.pending_notes.try_write()?.try_recv() {
-            let bot_user = pending
-                .activity
-                .actor
-                .dereference_local(&ctx)
-                .await
-                .expect("Missing bot user?");
+            let res = AmallgamContext::send_pending_note_immediately(&ctx, pending).await;
 
-            let msg = WithContext::new_default(pending.activity);
-
-            let sends =
-                SendActivityTask::prepare(&msg, &bot_user, pending.target_inboxes.clone(), &ctx)
-                    .await?;
-
-            for send in sends {
-                send.sign_and_send(&ctx).await?;
+            if let Err(err) = res {
+                log::warn!("Pending activity send failed! {}", err);
             }
         }
 
@@ -88,9 +75,13 @@ mod routes {
     }
 
     pub mod admin {
+        use activitypub_federation::fetch::object_id::ObjectId;
         use axum::routing::put;
 
-        use crate::context::{ModelConfig, ModelId};
+        use crate::{
+            context::{ModelConfig, ModelId},
+            objects::users::User,
+        };
 
         use super::*;
 
@@ -133,7 +124,7 @@ mod routes {
         #[derive(Deserialize)]
         struct BotAlias {
             user_id: String,
-            alias_id: String,
+            alias_id: ObjectId<User>,
         }
 
         #[axum::debug_handler]
