@@ -1,11 +1,11 @@
 services:
   # AmaLLgaM and friends
-  amallgam_1:
+  amallgam-1:
     extends:
       file: amallgam-service.yml
       service: amallgam_base
     environment:
-      AMALLGAM_DOMAIN: "amallgam_1.docker"
+      AMALLGAM_DOMAIN: "amallgam-1.docker"
       AMALLGAM_MAX_SIMULTANEOUS_SESSIONS: "1"
       AMALLGAM_NUM_CORES_PER_SESSION: "2"
     volumes:
@@ -14,14 +14,14 @@ services:
     networks:
       default:
         aliases:
-          - amallgam_1.docker
+          - amallgam-1.docker
 
-  amallgam_2:
+  amallgam-2:
     extends:
       file: amallgam-service.yml
       service: amallgam_base
     environment:
-      AMALLGAM_DOMAIN: "amallgam_2.docker"
+      AMALLGAM_DOMAIN: "amallgam-2.docker"
       AMALLGAM_MAX_SIMULTANEOUS_SESSIONS: "1"
       AMALLGAM_NUM_CORES_PER_SESSION: "2"
     volumes:
@@ -30,7 +30,7 @@ services:
     networks:
       default:
         aliases:
-          - amallgam_2.docker
+          - amallgam-2.docker
 
   # Mastodon and friends
   mastodon:

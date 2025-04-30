@@ -8,6 +8,7 @@ services:
     environment:
       RUST_LOG: info,activitypub_federation=debug,tower_http=trace
       AMALLGAM_ROOT: "/amallgam"
+      AMALLGAM_PORT: 443
     volumes:
       - "./extra/amallgam/models:/amallgam/models:z"
       - "./extra/ssl/ca/cert.pem:/etc/ssl/certs/ca.pem:z"

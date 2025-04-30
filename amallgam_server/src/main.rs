@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
 
     let amallgam_root: PathBuf = get_env_with_err!("AMALLGAM_ROOT")?.parse()?;
     let domain_name = get_env_with_err!("AMALLGAM_DOMAIN")?;
+    let port = get_env_with_err!("AMALLGAM_PORT")?.parse()?;
     let max_simultaneous_sessions: usize =
         get_env_with_err!("AMALLGAM_MAX_SIMULTANEOUS_SESSIONS")?.parse()?;
     let num_cores_per_session: u32 =
@@ -40,7 +41,6 @@ async fn main() -> Result<()> {
         max_simultaneous_sessions,
         num_cores_per_session,
     };
-    let port = 443;
     log::info!("AmaLLgaM getting ready on host {}", &config.domain_name);
 
     // Prepare the router
