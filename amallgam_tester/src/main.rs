@@ -6,7 +6,7 @@ use anyhow::Result;
 use axum_server::{tls_rustls::RustlsConfig, Handle};
 use reqwest_middleware::reqwest::Client;
 use rustls::crypto::ring;
-use tokio::signal;
+use tokio::{signal, time};
 use tracing_subscriber::EnvFilter;
 use url::Url;
 
@@ -35,6 +35,8 @@ async fn main() -> Result<()> {
     let target_user: ObjectId<User> = get_env_with_err!("AMALLGAM_TARGET_USER")?.parse()?;
     let num_messages: usize =
         get_env_with_err!("AMALLGAM_NUM_MESSAGES")?.parse()?;
+    let rate_per_sec: u32 =
+        get_env_with_err!("AMALLGAM_RATE_PER_SEC")?.parse()?;
 
     log::info!("AmaLLgaM Tester getting ready on host {}", &domain_name);
 
@@ -53,7 +55,7 @@ async fn main() -> Result<()> {
     let shutdown_signal = shutdown_signal(handle.clone());
 
     tokio::spawn(shutdown_signal);
-    tokio::spawn(run_tester(handle.clone(), domain_name, num_messages));
+    tokio::spawn(run_tester(handle.clone(), domain_name, num_messages, rate_per_sec));
 
     // And launch
     log::info!("AmaLLgaM listening on port {port}");
@@ -65,16 +67,22 @@ async fn main() -> Result<()> {
     )
 }
 
-async fn run_tester(handle: Handle, domain_name: String, num_messages: usize) {
+async fn run_tester(handle: Handle, domain_name: String, num_messages: usize, rate: u32) {
     let send_note_url: Url = format!("https://{domain_name}/send_note").parse().expect("Bad URL?");
     let print_stats_url: Url = format!("https://{domain_name}/print_stats").parse().expect("Bad URL?");
 
     let client = Client::builder().danger_accept_invalid_certs(true).build().expect("Bad client?");
 
+    let gap = Duration::from_secs(1) / rate;
     for i in 0..num_messages {
         log::info!("Sending message {}", i + 1);
         client.post(send_note_url.clone()).send().await.expect("Bad response?");
+
+        time::sleep(gap).await;
     }
+
+    log::info!("Waiting before printing stats...");
+    time::sleep(Duration::from_millis(5000)).await;
     client.post(print_stats_url.clone()).send().await.expect("Bad response?");
 
     handle.graceful_shutdown(None);

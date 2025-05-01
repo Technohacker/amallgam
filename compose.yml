@@ -32,6 +32,28 @@ services:
         aliases:
           - amallgam-2.docker
 
+  amallgam-tester:
+    build: amallgam_tester
+    develop:
+      watch:
+        - action: rebuild
+          path: ./amallgam_tester
+
+    environment:
+      RUST_LOG: info,activitypub_federation=debug
+      AMALLGAM_ROOT: "/amallgam"
+      AMALLGAM_PORT: 443
+      AMALLGAM_DOMAIN: "amallgam-tester.docker"
+      AMALLGAM_TARGET_USER: "https://amallgam-1.docker/user/qwen_bot_1/"
+      AMALLGAM_NUM_MESSAGES: 100
+      AMALLGAM_RATE_PER_SEC: 1
+    volumes:
+      - "./extra/ssl/amallgam_tester:/amallgam/ssl:z"
+    networks:
+      default:
+        aliases:
+          - amallgam-tester.docker
+
   # Mastodon and friends
   mastodon:
     build: vendor/mastodon

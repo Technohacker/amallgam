@@ -50,7 +50,7 @@ impl AmallgamTesterContext {
         let base_url: Url = format!("https://{domain_name}/").parse().expect("Bad URL?");
 
         let user_url: Url = base_url
-            .join(&format!("./user/{test_user}"))
+            .join(&format!("./user/{test_user}/"))
             .expect("Bad URL?");
         let kp = generate_actor_keypair().expect("Bad Keypair?");
 
@@ -128,27 +128,28 @@ mod routes {
     #[axum::debug_handler]
     pub(super) async fn send_note(ctx: Data<Arc<AmallgamTesterContext>>) -> Result<()> {
         let note = ctx.new_create_activity(
-            ctx.target_user.clone(),
+            ctx.user.id.clone(),
             vec![public()],
             vec![],
             ctx.new_note(
                 ctx.user.id.clone(),
                 vec![ctx.target_user.inner().clone()],
                 vec![],
-                "",
+                "Hello!",
                 None,
                 vec![Mention::for_user(ctx.target_user.clone())],
             ),
         );
 
-        ctx.note_starts
-            .write()
-            .await
-            .insert(note.object.id.inner().clone(), Instant::now());
-
         let msg = WithContext::new_default(note);
 
-        let sends = SendActivityTask::prepare(&msg, &ctx.user, vec![], &ctx).await?;
+        let sends = SendActivityTask::prepare(
+            &msg,
+            &ctx.user,
+            vec![ctx.target_user.inner().join("./inbox").expect("Bad URL?")],
+            &ctx,
+        )
+        .await?;
 
         let res = async {
             for send in sends {
@@ -158,10 +159,15 @@ mod routes {
             anyhow::Ok(())
         };
 
-        if res.await.is_err() {
-            log::warn!("Note failed");
+        if let Err(err) = res.await {
+            log::warn!("Note failed: {err}");
             ctx.failed_notes
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            ctx.note_starts
+                .write()
+                .await
+                .insert(msg.inner().object.id.inner().clone(), Instant::now());
         }
 
         Ok(())
@@ -175,8 +181,8 @@ mod routes {
 
         let mut durations = vec![];
 
-        let note_ends = ctx.note_ends.blocking_read();
-        for (key, start) in ctx.note_starts.blocking_read().iter() {
+        let note_ends = ctx.note_ends.read().await;
+        for (key, start) in ctx.note_starts.read().await.iter() {
             let end = note_ends.get(key);
 
             if let Some(end) = end {
@@ -187,12 +193,17 @@ mod routes {
             }
         }
 
+        let failed_sends = ctx.failed_notes.load(std::sync::atomic::Ordering::SeqCst);
         let sum_dur: Duration = durations.into_iter().sum();
-        let avg_dur = sum_dur.as_millis() / successful;
+        let avg_dur = sum_dur
+            .as_millis()
+            .checked_div(successful)
+            .unwrap_or_default();
 
+        log::info!("\tFailed Sends:          {failed_sends}");
         log::info!("\tSuccessful Replies:    {successful}");
         log::info!("\tReplies not received:  {not_replied}");
-        log::info!("\tAverage time to reply: {avg_dur} seconds");
+        log::info!("\tAverage time to reply: {avg_dur} milliseconds");
 
         log::info!("");
         log::info!("===================================================");

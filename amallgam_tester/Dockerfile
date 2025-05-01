@@ -13,7 +13,7 @@ RUN cargo build
 FROM debian:bookworm-slim
 WORKDIR /amallgam
 
-COPY --from=builder /usr/src/amallgam/target/debug/amallgam_tester /usr/local/bin/amallgam_tester
+COPY --from=builder /usr/src/amallgam/target/debug/amallgam_tester /usr/bin/amallgam_tester
 
 ENV RUST_LOG info
-CMD ["/bin/bash", "-c", "update-ca-certificates && amallgam_tester"]
+CMD ["bash", "-c", "amallgam_tester"]
