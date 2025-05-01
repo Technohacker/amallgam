@@ -1,15 +1,19 @@
+use std::sync::Arc;
+
 use activitypub_federation::{
     config::Data,
     fetch::object_id::ObjectId,
     kinds::public,
     traits::{ActivityHandler, Actor},
 };
+use anyhow::Result;
 use axum::async_trait;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
-    activities::{create::Create, PendingActivity},
+    activities::{PendingActivity, create::Create},
     context::{AmallgamContext, ArcAmallgamContext, ModelId},
 };
 
@@ -115,122 +119,190 @@ impl ActivityHandler for Create<Note> {
     }
 
     async fn receive(self, ctx: &Data<Self::DataType>) -> Result<(), Self::Error> {
-        let note = &self.object;
+        let note = self.object;
         log::info!("Note Received: {}", &note.id);
 
         let create_sender_id = &self.actor;
-        let note_sender_id = &self.object.attributed_to;
+        let note_sender_id = &note.attributed_to;
         let note_sender = note_sender_id.dereference(ctx).await?;
 
         // Check if this is an alias offload request
         let offload_request = create_sender_id != note_sender_id;
 
-        let mentioned_bots = if offload_request {
-            // This is an offload request, check if we have the bot
-            log::info!("Request is an alias offload for: {}", create_sender_id);
-
-            let Some(offload_bot) = ctx.find_bot_for_alias(create_sender_id).await? else {
-                log::info!("Offload bot not found: {}", create_sender_id);
-                return Err(anyhow::format_err!(
-                    "Offload bot not found for: {}",
-                    create_sender_id
-                ));
-            };
-
-            // And only process it with the offload bot
-            vec![offload_bot]
+        if offload_request {
+            AmallgamContext::handle_offload_note(ctx, note, note_sender, create_sender_id).await?;
         } else {
-            // This is a normal request. Find the mentioned bots
-            let mut bots = vec![];
-
-            for mention in &note.tag {
-                let bot_id = &mention.href;
-
-                // Skip remote mentions
-                if !bot_id.is_local(ctx) {
-                    continue;
-                }
-                log::info!("\tBot Mentioned: {}", &bot_id);
-
-                let Ok(bot) = bot_id.dereference_local(ctx).await else {
-                    log::warn!("\tBot Missing: {}", &bot_id);
-                    continue;
-                };
-
-                bots.push(bot);
-            }
-
-            bots
+            AmallgamContext::handle_normal_note(ctx, note, note_sender).await?;
         };
 
-        for bot in mentioned_bots {
-            let arc_ctx = ctx.app_data().clone();
+        Ok(())
+    }
+}
 
-            let bot_id = ObjectId::from(bot.id());
-            let note = note.clone();
+impl AmallgamContext {
+    async fn handle_normal_note(
+        ctx: &Data<ArcAmallgamContext>,
+        note: Note,
+        note_sender: User,
+    ) -> Result<()> {
+        // This is a normal request. Take the first locally mentioned bot
+        let mut mentioned_bot = None;
+        for mention in &note.tag {
+            let bot_id = &mention.href;
 
-            let note_sender_id = note_sender_id.clone();
+            // Skip remote mentions
+            if !bot_id.is_local(ctx) {
+                continue;
+            }
+            log::info!("\tBot Mentioned: {}", &bot_id);
 
-            if offload_request {
-                // Compute the offload response
-                let target_inboxes = vec![note_sender.shared_inbox_or_inbox()];
+            let Ok(bot) = bot_id.dereference_local(ctx).await else {
+                log::warn!("\tBot Missing: {}", &bot_id);
+                continue;
+            };
 
-                ctx.queue_up_pending_note(async move {
-                    let message = note.content;
-                    log::info!("Received Message: {message}");
-                    let completion = arc_ctx.run_llm_inference(&bot, message).await?;
+            // Take the mentioned bot and continue
+            mentioned_bot = Some(bot);
+            break;
+        };
 
-                    Ok(PendingActivity {
-                        activity: arc_ctx.new_create_activity(
-                            bot_id.clone(),
-                            vec![public()],
-                            vec![],
-                            arc_ctx.new_note(
-                                bot_id.clone(),
-                                vec![public()],
-                                vec![note_sender_id.inner().clone()],
-                                completion,
-                                Some(note.id),
-                                [Mention::for_user(note_sender_id.clone())],
-                            ),
-                        ),
-                        target_inboxes,
-                    })
-                })
-                .await;
-            } else {
-                // Test out offloading
-                log::info!("Offloading note: {}", &note.id);
-                let User::Local { user_id, .. } = bot else {
-                    panic!("Attempted to use remote user as a bot");
+        // If there weren't any bots, bail early
+        let Some(mentioned_bot) = mentioned_bot else {
+            // Ok return to avoid retries from the client
+            return Ok(());
+        };
+
+        let arc_ctx = ctx.app_data().clone();
+
+        // Try to queue it up
+        let queued_successfully = arc_ctx.try_process_note(note.clone(), note_sender, mentioned_bot.clone()).await?;
+
+        if queued_successfully {
+            // If we've queued up successfully, return success
+            Ok(())
+        } else {
+            // The queue was full, this note should be offloaded
+            log::info!("Queue full. Offloading note: {}...", &note.id);
+
+            // Test out offloading
+            let User::Local { user_id, .. } = &mentioned_bot else {
+                panic!("Attempted to use remote user as a bot");
+            };
+
+            // Get all aliases and shuffle them
+            let mut aliases = arc_ctx.get_bot_aliases(user_id).await?;
+            aliases.shuffle(&mut rand::rng());
+
+            // Try each alias one-by-one
+            for alias in aliases {
+                let offload_bot = match alias.dereference(ctx).await {
+                    Ok(alias) => {
+                        alias
+                    }
+                    Err(err) => {
+                        log::info!("Offload bot not found: {} {}", &alias, err);
+                        continue;
+                    }
                 };
 
-                let aliases = arc_ctx.get_bot_aliases(&user_id).await?;
-                let mut target_inboxes = vec![];
-                for alias in aliases {
-                    match alias.dereference(ctx).await {
-                        Ok(alias) => {
-                            target_inboxes.push(alias.shared_inbox_or_inbox());
-                        }
-                        Err(err) => {
-                            log::info!("Offload bot not found: {} {}", &alias, err);
-                        }
-                    }
-                }
+                // Send the offload activity immediately. This will fail if the alias is also busy
+                let res = Self::send_pending_note_immediately(
+                    ctx,
+                    PendingActivity {
+                        activity: arc_ctx.new_create_activity(
+                            ObjectId::from(mentioned_bot.id()),
+                            vec![public()],
+                            vec![],
+                            note.clone(),
+                        ),
+                        target_inboxes: vec![offload_bot.shared_inbox_or_inbox()],
+                    },
+                )
+                .await;
 
-                AmallgamContext::send_pending_note_immediately(ctx, PendingActivity {
+                match res {
+                    Ok(_) => {
+                        // The alias has queued up successfully. Return success
+                        return Ok(());
+                    },
+                    Err(err) => {
+                        // We weren't able to queue up on the alias. Try the next one
+                        log::warn!("Offload failed for alias: {err}");
+                        continue;
+                    },
+                }
+            }
+
+            // If we're here, all of the queues were unavailable. Signal it to the client
+            Err(anyhow::format_err!("Resources unavailable. Try again"))
+        }
+    }
+
+    async fn handle_offload_note(
+        ctx: &Data<ArcAmallgamContext>,
+        note: Note,
+        note_sender: User,
+        offloaded_from: &ObjectId<User>,
+    ) -> Result<()> {
+        // This is an offload request, check if we have the bot
+        log::info!("Request is an alias offload for: {}", offloaded_from);
+
+        let Some(offload_bot) = ctx.find_bot_for_alias(offloaded_from).await? else {
+            log::warn!("Offload bot not found: {}", offloaded_from);
+            return Err(anyhow::format_err!(
+                "Offload bot not found for: {}",
+                offloaded_from
+            ));
+        };
+
+        log::info!("Offloading with: {}", offload_bot.id());
+        let queued_successfully = ctx.try_process_note(note, note_sender, offload_bot).await?;
+
+        // If we weren't able to queue it up, bail and let the original bot handle subsequent tries
+        if queued_successfully {
+            Ok(())
+        } else {
+            Err(anyhow::format_err!("Session queue full"))
+        }
+    }
+
+    #[must_use = "If the queue is full, this will not run any operation"]
+    async fn try_process_note(
+        self: &Arc<Self>,
+        note: Note,
+        note_sender: User,
+        bot: User,
+    ) -> Result<bool> {
+        let bot_id = ObjectId::from(bot.id());
+        let note_sender_id = note.attributed_to;
+
+        let message = note.content;
+
+        let arc_ctx = self.clone();
+        let queued_successfully = self
+            .try_queue_up_pending_note(async move {
+                log::info!("Received Message: {message}");
+                let completion = arc_ctx.run_llm_inference(&bot, message).await?;
+
+                Ok(PendingActivity {
                     activity: arc_ctx.new_create_activity(
                         bot_id.clone(),
                         vec![public()],
                         vec![],
-                        note,
+                        arc_ctx.new_note(
+                            bot_id.clone(),
+                            vec![public()],
+                            vec![note_sender_id.inner().clone()],
+                            completion,
+                            Some(note.id),
+                            [Mention::for_user(note_sender_id)],
+                        ),
                     ),
-                    target_inboxes,
+                    target_inboxes: vec![note_sender.shared_inbox_or_inbox()],
                 })
-                .await?;
-            }
-        }
+            })
+            .await;
 
-        Ok(())
+        Ok(queued_successfully)
     }
 }

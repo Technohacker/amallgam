@@ -13,7 +13,6 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-
     ring::default_provider()
         .install_default()
         .expect("Couldn't install crypto provider");

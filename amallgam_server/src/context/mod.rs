@@ -110,29 +110,35 @@ impl AmallgamContext {
             .expect("Bad Server-relative URL?")
     }
 
-    pub(crate) async fn queue_up_pending_note(
+    /// Returns if the queue up was successful
+    #[must_use = "If the queue is full, this will not run any operation"]
+    pub(crate) async fn try_queue_up_pending_note(
         self: &Arc<Self>,
         future: impl Future<Output = Result<PendingActivity<Create<Note>>>> + Send + 'static,
-    ) {
+    ) -> bool {
+        log::info!("Checking for free session...");
+        let mut pool_lock = self.active_sessions_pool.lock().await;
+
         // Check if we're above the number of active sessions
-        let mut pool_lock = loop {
-            // First get a lock on the pool
-            log::info!("Checking for free session...");
-            let mut pool_lock = self.active_sessions_pool.lock().await;
+        if pool_lock.len() < self.config.max_simultaneous_sessions {
+            // If we've got free space, we can queue up normally. Keep the pool locked until we're done
+        } else {
+            // If not, check if a session is done
+            let try_free = pool_lock.try_join_next();
+            if try_free.is_none() {
+                // This option is None only if there were no completed tasks or if the queue is empty
+                // We make sure it's not the empty path with the check above
 
-            // Check how many active sessions are going on
-            if pool_lock.len() < self.config.max_simultaneous_sessions {
-                // If we've got free space, use the lock in the outside code
-                break pool_lock;
-            } else {
-                // If not, wait for a session to be done
-                // This will keep the mutex locked, forcing future requests to be held up by the pool lock above
-                log::info!("Free session not available. Waiting...");
-                pool_lock.join_next().await;
+                // There are no free slots available. Bail out
+                log::info!("Free session not available");
+                return false;
             }
-        };
 
-        log::info!("Free session available");
+            // If we're here, there was a free slot
+            log::info!("Free session available");
+        }
+
+        // The lock is still held here, so we use it to queue up the task
 
         let ctx = self.clone();
         pool_lock.spawn(async move {
@@ -151,6 +157,9 @@ impl AmallgamContext {
                 log::warn!("Pending activity send failed! {}", err);
             }
         });
+
+        // And since we were able to queue one up, signal it to the user
+        true
     }
 
     pub(crate) async fn send_pending_note_immediately(
@@ -170,12 +179,12 @@ impl AmallgamContext {
             SendActivityTask::prepare(&msg, &bot_user, pending.target_inboxes.clone(), data_ctx)
                 .await?;
 
-        futures::future::join_all(sends.into_iter().map(|x| async move {
-            if let Err(err) = x.sign_and_send(data_ctx).await {
-                log::warn!("Failed to send an activity: {err}");
-            }
-        }))
-        .await;
+        futures::future::try_join_all(
+            sends
+                .into_iter()
+                .map(|x| async move { x.sign_and_send(data_ctx).await }),
+        )
+        .await?;
 
         Ok(())
     }
