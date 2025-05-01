@@ -1,0 +1,21 @@
+[package]
+name = "amallgam_tester"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+activitypub_federation = { version = "0.6", features = ["axum"] }
+anyhow = "1.0"
+axum = { version = "0.7", features = ["macros"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+futures = "0.3"
+log = "0.4"
+reqwest-middleware = { version = "0.3", features = ["rustls-tls"] }
+rustls = "0.23"
+serde = "1.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.43", features = ["full"] }
+tower = "0.5"
+tower-http = {version = "0.6", features = ["trace"] }
+url = "2.5"
+uuid = { version = "1.15", features = ["v4", "v7", "serde"] }
